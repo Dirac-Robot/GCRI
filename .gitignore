@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Personal and temporary files
+.env
+.python-version
+.idea/
+
+# Logs and temporary data
+gcri_logs/
+*workflow*.png
+
+# Task files
+tasks/
