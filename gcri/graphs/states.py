@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class HypothesisResult(BaseModel):
     index: int
+    strategy: str
     hypothesis: str
     reasoning: str
     counter_reasoning: str
@@ -17,6 +18,7 @@ class HypothesisResult(BaseModel):
 class TaskState(BaseModel):
     task: str
     feedback: str = ''
+    fallback: Optional[str] = None
     strategies: List[str] = Field(default_factory=list)
     results: Annotated[List[HypothesisResult], operator.add] = Field(default_factory=list)
     aggregated_result: Optional[str] = None

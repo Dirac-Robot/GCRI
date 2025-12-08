@@ -43,6 +43,7 @@ class GCRIGraph:
             **compression_config.parameters
         )
         graph.add_node('sample_strategies', partial(self.sample_strategies, agent=strategy_agent))
+        graph.add_node('refine', partial(self.sample_strategies, agent=strategy_agent))
         graph.add_node('aggregate', self.aggregate)
         graph.add_node('decision', partial(self.decide, agent=decision_agent))
         graph.add_node('compression', partial(self.compress, agent=compression_agent))
@@ -54,10 +55,7 @@ class GCRIGraph:
         )
         graph.add_edge('branch_executor', 'aggregate')
         graph.add_edge('aggregate', 'decision')
-        graph.add_conditional_edges(
-            'decision',
-            self.route_from_decision
-        )
+        graph.add_edge('decision', 'compression')
         graph.add_edge('compression', END)
         self._graph = graph
         self._workflow = graph.compile()
@@ -80,58 +78,68 @@ class GCRIGraph:
                 {
                     'index': index,
                     'original_task': state.task,
-                    'strategy': state.strategies[index]
+                    'strategy': state.strategies[index],
+                    'feedback': state.feedback
                 }
             ) for index in range(num_branches)
         ]
 
-    @classmethod
-    def route_from_decision(cls, state: TaskState):
-        if state.decision:
-            return 'compression'
-        else:
-            return END
-
     def aggregate(self, state: TaskState):
         aggregated_results = [
-            dict(
-                strategy=state.strategies[result.index],
-                reasoning=result.reasoning,
-                hypothesis=result.hypothesis,
-                counter_reasoning=result.counter_reasoning,
-                counter_example=result.counter_example,
-                counter_strength=result.counter_strength,
-                adjustment=result.adjustment
-            )
+            {
+                key: getattr(result, key, '')
+                for key in self.config.protocols.aggregate_targets
+            }
             for result in state.results
-            if result.counter_strength != 'strong' or not self.config.reject_if_strong_counter_example_exists
+            if result.counter_strength != 'strong' or self.config.protocols.accept_all
         ]
         return {'aggregated_result': json.dumps(aggregated_results, indent=4, ensure_ascii=False)}
 
     def sample_strategies(self, state: TaskState, agent):
+        logger.info('Request generating strategies...')
         template_path = self.config.templates.strategy_generator
         with open(template_path, 'r') as f:
             template = f.read().format(
-                feedback=state.feedback,
                 task=state.task,
+                compressed_output=state.compressed_output,
+                feedback=state.feedback,
                 num_hypothesis=len(self.config.agents.branches)
             )
-        strategies = agent.with_structured_output(schema=Strategies).invoke(template)
+        for _ in range(self.config.protocols.max_tries_per_agent):
+            strategies = agent.with_structured_output(schema=Strategies).invoke(template)
+            if strategies is not None:
+                break
+        else:
+            raise ValueError(
+                f'Agent could not generate strategies '
+                f'for {self.config.protocols.max_tries_per_agent} times.'
+            )
         for index, strategy in enumerate(strategies.strategies):
             logger.info(f'Sampled strategy #{index}: {strategy}')
         return dict(strategies=strategies.strategies)
 
     def sample_hypothesis(self, state: BranchState):
+        logger.info(f'Request sampling hypothesis for strategy #{state.index}...')
         hypothesis_config = self.config.agents.branches[state.index].hypothesis
         agent = init_chat_model(hypothesis_config.model_id, **hypothesis_config.parameters)
         template_path = self.config.templates.hypothesis
         with open(template_path, 'r') as f:
             template = f.read().format(task=state.original_task, strategy=state.strategy)
-        hypothesis = agent.with_structured_output(schema=Hypothesis).invoke(template)
+        for _ in range(self.config.protocols.max_tries_per_agent):
+            hypothesis = agent.with_structured_output(schema=Hypothesis).invoke(template)
+            if hypothesis is not None:
+                break
+        else:
+            raise ValueError(
+                f'Agent could not generate hypothesis '
+                f'for {self.config.protocols.max_tries_per_agent} times '
+                f'at strategy #{state.index}.'
+            )
         logger.info(f'Sampled hypothesis #{state.index}: {hypothesis.hypothesis}')
         return dict(hypothesis=hypothesis.hypothesis)
 
     def reasoning_and_refine(self, state: BranchState):
+        logger.info(f'Request reasoning and refining hypothesis #{state.index}...')
         reasoning_config = self.config.agents.branches[state.index].reasoning
         agent = init_chat_model(reasoning_config.model_id, **reasoning_config.parameters)
         template_path = self.config.templates.reasoning
@@ -141,14 +149,27 @@ class GCRIGraph:
                 strategy=state.strategy,
                 hypothesis=state.hypothesis
             )
-        reasoning = agent.with_structured_output(schema=Reasoning).invoke(template)
+        for _ in range(self.config.protocols.max_tries_per_agent):
+            reasoning = agent.with_structured_output(schema=Reasoning).invoke(template)
+            if reasoning is not None:
+                break
+        else:
+            raise ValueError(
+                f'Agent could not generate refined hypothesis '
+                f'for {self.config.protocols.max_tries_per_agent} times '
+                f'at hypothesis #{state.index}.'
+            )
         logger.info(f'Refined hypothesis #{state.index}: {reasoning.refined_hypothesis}')
         return dict(
             reasoning=reasoning.reasoning,
             hypothesis=reasoning.refined_hypothesis
         )
 
+    def improve(self, state: TaskState, agent):
+        pass
+
     def verify(self, state: BranchState):
+        logger.info(f'Request verifying refined hypothesis #{state.index}...')
         verification_config = self.config.agents.branches[state.index].verification
         agent = init_chat_model(verification_config.model_id, **verification_config.parameters)
         template_path = self.config.templates.verification
@@ -160,9 +181,18 @@ class GCRIGraph:
             reasoning=state.reasoning,
             hypothesis=state.hypothesis
         )
-        verification = agent.with_structured_output(schema=Verification).invoke(template)
+        for _ in range(self.config.protocols.max_tries_per_agent):
+            verification = agent.with_structured_output(schema=Verification).invoke(template)
+            if verification is not None:
+                break
+        else:
+            raise ValueError(
+                f'Agent could not generate verification '
+                f'for {self.config.protocols.max_tries_per_agent} times.'
+            )
         result = HypothesisResult(
             index=state.index,
+            strategy=state.strategy,
             reasoning=state.reasoning,
             hypothesis=state.hypothesis,
             counter_reasoning=verification.reasoning,
@@ -174,34 +204,62 @@ class GCRIGraph:
         return {'results': [result]}
 
     def decide(self, state: TaskState, agent):
+        logger.info(f'Request generating final decision for current loop...')
         template_path = self.config.templates.decision
         with open(template_path, 'r') as f:
             template = f.read()
         template = template.format(task=state.task, aggregated_result=state.aggregated_result)
-        decision = agent.with_structured_output(schema=Decision).invoke(template)
+        for _ in range(self.config.protocols.max_tries_per_agent):
+            decision = agent.with_structured_output(schema=Decision).invoke(template)
+            if decision is not None:
+                break
+        else:
+            raise ValueError(
+                f'Agent could not generate decision '
+                f'for {self.config.protocols.max_tries_per_agent} times.'
+            )
         logger.info(f'Decision: {decision.decision}')
         if not decision.decision:
             logger.info(f'Feedback: {decision.feedback}')
         return {
             'decision': decision.decision,
-            'final_output': decision.final_output,
+            'final_output': decision.final_output if decision.decision else decision.feedback,
             'feedback': decision.feedback,
             'decision_reasoning': decision.decision_reasoning
         }
 
     def compress(self, state: TaskState, agent):
-        template_path = self.config.templates.compression
+        logger.info(f'Request compression...')
+        if state.decision:
+            template_path = self.config.templates.compression
+        else:
+            template_path = self.config.templates.compression_prev
         with open(template_path, 'r') as f:
             template = f.read()
-        template = template.format(task=state.task, final_output=state.final_output)
-        compression = agent.with_structured_output(schema=Compression).invoke(template)
+        template = template.format(
+            task=state.task,
+            final_output=state.final_output,
+            aggregated_result=state.aggregated_result,
+            feedback=state.feedback
+        )
+        for _ in range(self.config.protocols.max_tries_per_agent):
+            compression = agent.with_structured_output(schema=Compression).invoke(template)
+            if compression is not None:
+                break
+        else:
+            raise ValueError(
+                f'Agent could not generate compression '
+                f'for {self.config.protocols.max_tries_per_agent} times.'
+            )
         logger.info(f'Compressed Result: {compression.compressed_output}')
         return {'compressed_output': compression.compressed_output}
 
     def __call__(self, task):
         feedback = ''
+        compressed_output = ''
+        result = None
         for index in range(self.config.max_iterations):
-            result = self.workflow.invoke({'task': task, 'feedback': feedback})
+            result = self.workflow.invoke({'task': task, 'feedback': feedback, 'compressed_output': compressed_output})
             result['results'] = [dict(state) for state in result['results']]
             os.makedirs(self.log_dir, exist_ok=True)
             log_path = os.path.join(self.log_dir, f'log_iteration_{index:02d}.json')
@@ -211,8 +269,8 @@ class GCRIGraph:
             if result['decision']:
                 logger.info('Final result is successfully deduced.')
                 return result
-            elif index+1 == self.config.max_iterations:
-                logger.info('Final result is not deduced, but iteration count is over.')
-                return result
             else:
+                compressed_output = result['compressed_output']
                 feedback = result['feedback']
+        logger.info('Final result is not deduced, but iteration count is over.')
+        return result

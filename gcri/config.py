@@ -22,7 +22,10 @@ def default(config):
             ),
             verification=dict(
                 model_id='gpt-5-mini',
-                parameters=dict()
+                parameters=dict(),
+                options=dict(
+                    use_code_tools=True
+                )
             )
         ),
         dict(
@@ -36,7 +39,10 @@ def default(config):
             ),
             verification=dict(
                 model_id='gpt-5-mini',
-                parameters=dict()
+                parameters=dict(),
+                options=dict(
+                    use_code_tools=True
+                )
             )
         ),
         dict(
@@ -50,13 +56,19 @@ def default(config):
             ),
             verification=dict(
                 model_id='gpt-5-mini',
-                parameters=dict()
+                parameters=dict(),
+                options=dict(
+                    use_code_tools=True
+                )
             )
         )
     ]
     config.agents.decision = dict(
         model_id='gpt-5.1',
-        parameters=dict()
+        parameters=dict(),
+        options=dict(
+            use_code_tools=True
+        )
     )
     config.agents.compression = dict(
         model_id='gpt-5-nano',
@@ -68,14 +80,20 @@ def default(config):
         reasoning='./gcri/templates/reasoning.txt',
         verification='./gcri/templates/verification.txt',
         decision='./gcri/templates/decision.txt',
-        compression='./gcri/templates/compression.txt'
+        compression='./gcri/templates/compression.txt',
+        compression_prev='./gcri/templates/compression_prev.txt'
     )
     config.max_iterations = 5
-    config.reject_if_strong_counter_example_exists = False
+    config.protocols = dict(
+        accept_all=True,
+        aggregate_targets=['strategy', 'hypothesis', 'adjustment', 'counter_strength'],
+        max_tries_per_agent=3
+    )
+    config.use_deep_feedback = False
     config.log_dir = './gcri_logs'
 
 
-@scope.observe(default=False)
+@scope.observe()
 def faster(config):
     config.agents.branches = [
         dict(
@@ -130,6 +148,58 @@ def faster(config):
                 parameters=dict(
                     reasoning=dict(effort='low')
                 )
+            )
+        )
+    ]
+
+
+@scope.observe()
+def mix_up(config):
+    config.agents.decision = dict(
+        model_id='gemini-2.5-flash-lite',
+        parameters=dict(temperature=0.5)
+    )
+    config.agents.branches = [
+        dict(
+            hypothesis=dict(
+                model_id='gemini-2.5-flash-lite',
+                parameters=dict()
+            ),
+            reasoning=dict(
+                model_id='gpt-5-mini',
+                parameters=dict()
+            ),
+            verification=dict(
+                model_id='gpt-5-mini',
+                parameters=dict()
+            )
+        ),
+        dict(
+            hypothesis=dict(
+                model_id='gemini-2.5-flash-lite',
+                parameters=dict()
+            ),
+            reasoning=dict(
+                model_id='gpt-5-mini',
+                parameters=dict()
+            ),
+            verification=dict(
+                model_id='gpt-5-mini',
+                parameters=dict()
+            )
+        ),
+        dict(
+            hypothesis=dict(
+                model_id='gpt-5-mini',
+                parameters=dict()
+            ),
+            reasoning=dict(
+                model_id='gpt-5-mini',
+                parameters=dict()
+            ),
+            verification=dict(
+                model_id='gpt-5-mini',
+                parameters=dict()
             )
         )
     ]

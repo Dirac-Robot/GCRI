@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal
 
 from pydantic import BaseModel
 
@@ -18,7 +18,7 @@ class Reasoning(BaseModel):
 
 class Verification(BaseModel):
     counter_example: str
-    counter_strength: str
+    counter_strength: Literal['strong', 'moderate', 'weak', 'none']
     adjustment: str
     reasoning: str
 
