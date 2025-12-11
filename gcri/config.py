@@ -8,22 +8,36 @@ scope = Scope(config=ADict.auto())
 def default(config):
     config.agents.strategy_generator = dict(
         model_id='gpt-5-mini',
-        parameters=dict()
+        parameters=dict(
+            max_tokens=25600
+        )
     )
     config.agents.branches = [
         dict(
             hypothesis=dict(
                 model_id='gpt-5-mini',
-                parameters=dict()
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             reasoning=dict(
                 model_id='gpt-5-mini',
-                parameters=dict()
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             verification=dict(
                 model_id='gpt-5-mini',
-                parameters=dict(),
-                options=dict(
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
                     use_code_tools=True
                 )
             )
@@ -31,16 +45,28 @@ def default(config):
         dict(
             hypothesis=dict(
                 model_id='gpt-5-mini',
-                parameters=dict()
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             reasoning=dict(
                 model_id='gpt-5-mini',
-                parameters=dict()
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             verification=dict(
                 model_id='gpt-5-mini',
-                parameters=dict(),
-                options=dict(
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
                     use_code_tools=True
                 )
             )
@@ -48,16 +74,28 @@ def default(config):
         dict(
             hypothesis=dict(
                 model_id='gpt-5-mini',
-                parameters=dict()
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             reasoning=dict(
                 model_id='gpt-5-mini',
-                parameters=dict()
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             verification=dict(
                 model_id='gpt-5-mini',
-                parameters=dict(),
-                options=dict(
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
                     use_code_tools=True
                 )
             )
@@ -65,14 +103,23 @@ def default(config):
     ]
     config.agents.decision = dict(
         model_id='gpt-5.1',
-        parameters=dict(),
-        options=dict(
+        # model_id='gpt-5.1-codex',
+        parameters=dict(
+            # reasoning=dict(effort='high'),
+            max_tokens=25600
+        ),
+        gcri_options=dict(
             use_code_tools=True
         )
     )
-    config.agents.compression = dict(
-        model_id='gpt-5-nano',
-        parameters=dict()
+    config.agents.memory = dict(
+        model_id='gpt-5-mini',
+        parameters=dict(
+            max_tokens=25600
+        ),
+        gcri_options=dict(
+            use_code_tools=True
+        )
     )
     config.templates = dict(
         strategy_generator='./gcri/templates/strategy_generator.txt',
@@ -80,13 +127,13 @@ def default(config):
         reasoning='./gcri/templates/reasoning.txt',
         verification='./gcri/templates/verification.txt',
         decision='./gcri/templates/decision.txt',
-        compression='./gcri/templates/compression.txt',
-        compression_prev='./gcri/templates/compression_prev.txt'
+        memory='./gcri/templates/memory.txt',
+        active_memory='./gcri/templates/active_memory.txt'
     )
     config.max_iterations = 5
     config.protocols = dict(
         accept_all=True,
-        aggregate_targets=['strategy', 'hypothesis', 'adjustment', 'counter_strength'],
+        aggregate_targets=['strategy', 'hypothesis', 'counter_example', 'adjustment', 'counter_strength'],
         max_tries_per_agent=3
     )
     config.use_deep_feedback = False
@@ -94,59 +141,92 @@ def default(config):
 
 
 @scope.observe()
-def faster(config):
+def large_models(config):
     config.agents.branches = [
         dict(
             hypothesis=dict(
-                model_id='gpt-5-mini',
+                model_id='gpt-5.1',
                 parameters=dict(
-                    reasoning=dict(effort='low')
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
                 )
             ),
             reasoning=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-5.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             verification=dict(
                 model_id='gpt-5-mini',
                 parameters=dict(
-                    reasoning=dict(effort='low')
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
                 )
             )
         ),
         dict(
             hypothesis=dict(
-                model_id='gpt-5-mini',
+                model_id='gpt-5.1',
                 parameters=dict(
-                    reasoning=dict(effort='low')
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
                 )
             ),
             reasoning=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-5.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             verification=dict(
                 model_id='gpt-5-mini',
                 parameters=dict(
-                    reasoning=dict(effort='low')
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
                 )
             )
         ),
         dict(
             hypothesis=dict(
-                model_id='gpt-5-mini',
+                model_id='gpt-5.1',
                 parameters=dict(
-                    reasoning=dict(effort='low')
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
                 )
             ),
             reasoning=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-5.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             verification=dict(
                 model_id='gpt-5-mini',
                 parameters=dict(
-                    reasoning=dict(effort='low')
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
                 )
             )
         )
@@ -154,52 +234,105 @@ def faster(config):
 
 
 @scope.observe()
-def mix_up(config):
-    config.agents.decision = dict(
-        model_id='gemini-2.5-flash-lite',
-        parameters=dict(temperature=0.5)
+def gpt_4_1_based(config):
+    config.agents.strategy_generator = dict(
+        model_id='gpt-4.1',
+        parameters=dict()
     )
     config.agents.branches = [
         dict(
             hypothesis=dict(
-                model_id='gemini-2.5-flash-lite',
-                parameters=dict()
+                model_id='gpt-4.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             reasoning=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-4.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             verification=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-4.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             )
         ),
         dict(
             hypothesis=dict(
-                model_id='gemini-2.5-flash-lite',
-                parameters=dict()
+                model_id='gpt-4.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             reasoning=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-4.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             verification=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-4.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             )
         ),
         dict(
             hypothesis=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-4.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             reasoning=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-4.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             ),
             verification=dict(
-                model_id='gpt-5-mini',
-                parameters=dict()
+                model_id='gpt-4.1',
+                parameters=dict(
+                    max_tokens=25600
+                ),
+                gcri_options=dict(
+                    use_code_tools=True
+                )
             )
         )
     ]
+    config.agents.memory = dict(
+        model_id='gpt-4.1',
+        parameters=dict(
+            options=dict(
+                max_tokens=25600
+            )
+        )
+    )

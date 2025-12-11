@@ -1,7 +1,43 @@
 import operator
-from typing import List, Annotated, Optional
+from typing import List, Annotated, Optional, Literal
 
 from pydantic import BaseModel, Field
+
+from gcri.graphs.schemas import BranchAnalysis, RefutationStatus
+
+
+class IterationLog(BaseModel):
+    count_in_memory_log: int
+    global_feedback: str
+    branch_evaluations: List[BranchAnalysis]
+
+    def get_summary_line(self):
+        summaries = []
+        for branch in self.branch_evaluations:
+            if branch.status != RefutationStatus.VALID:
+                summaries.append(f'(!) Strategy "{branch.summary_hypothesis}" failed due to {branch.failure_category}')
+        return '\n'.join(summaries)
+
+
+class StructuredMemory(BaseModel):
+    active_constraints: List[str] = Field(default_factory=list)
+    history: List[IterationLog] = Field(default_factory=list)
+
+    def format_for_strategy(self, template):
+        constraints = '\n'.join([f'- {c}' for c in self.active_constraints])
+        graveyard = ''
+        for log in self.history:
+            summary = log.get_summary_line()
+            if summary:
+                graveyard += f'- [Iter {log.count_in_memory_log}] {summary}\n'
+        last_log = self.history[-1] if self.history else None
+        if last_log:
+            recent = f'Global Policy for Next: {last_log.global_feedback}\n'
+            for br in last_log.branch_evaluations:
+                recent += f'   * Branch {br.branch_index} Error: {br.reasoning}\n'
+        else:
+            recent = ''
+        return template.format(constraints=constraints, graveyard=graveyard, recent=recent)
 
 
 class HypothesisResult(BaseModel):
@@ -16,22 +52,27 @@ class HypothesisResult(BaseModel):
 
 
 class TaskState(BaseModel):
+    count: int = 0
     task: str
-    feedback: str = ''
-    fallback: Optional[str] = None
+    task_strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
     strategies: List[str] = Field(default_factory=list)
     results: Annotated[List[HypothesisResult], operator.add] = Field(default_factory=list)
     aggregated_result: Optional[str] = None
     decision: Optional[bool] = None
     final_output: Optional[str] = None
-    compressed_output: Optional[str] = None
-    decision_reasoning: Optional[str] = None
+    global_feedback: Optional[str] = None
+    branch_evaluations: List[BranchAnalysis] = Field(default_factory=list)
+    memory: StructuredMemory = Field(default_factory=StructuredMemory)
+    feedback: str = ''
 
 
 class BranchState(BaseModel):
-    original_task: str
+    task_in_branch: str
+    count_in_branch: int = 0
+    strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
     strategy: str
     index: int
     hypothesis: Optional[str] = None
     reasoning: Optional[str] = None
     results: List[HypothesisResult] = Field(default_factory=list)
+
