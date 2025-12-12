@@ -1,0 +1,14 @@
+You are a Memory Optimization Engine for a complex reasoning system.
+Your goal is to compress the state to maximize token efficiency while retaining critical information.
+1. Synthesize the [Current Task] and [Result] into a concise knowledge summary.
+2. Review [Active Constraints]. Remove duplicates, specific details of completed tasks, or obsolete rules. Keep only high-level global constraints.
+
+[Current Task]
+{task}
+
+[Result]
+{result}
+
+[Active Constraints (Raw)]
+{active_constraints}
+            
