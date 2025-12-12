@@ -74,6 +74,7 @@ class BranchState(BaseModel):
     index: int
     hypothesis: Optional[str] = None
     reasoning: Optional[str] = None
+    work_dir: str
     results: List[HypothesisResult] = Field(default_factory=list)
 
 

@@ -85,19 +85,27 @@ class GCRI:
 
     def map_branches(self, state: TaskState):
         num_branches = min(len(self.config.agents.branches), len(state.strategies))
-        return [
-            Send(
-                'branch_executor',
-                {
-                    'index': index,
-                    'count_in_branch': state.count,
-                    'task_in_branch': state.task,
-                    'strictness': state.task_strictness,
-                    'strategy': state.strategies[index],
-                    'feedback': state.feedback
-                }
-            ) for index in range(num_branches)
-        ]
+        root_dir = os.path.join(self.log_dir, 'workspaces')
+        os.makedirs(root_dir, exist_ok=True)
+        sends = []
+        for index in range(num_branches):
+            branch_workspace = os.path.join(root_dir, f'branch_{index}')
+            os.makedirs(branch_workspace, exist_ok=True)
+            sends.append(
+                Send(
+                    'branch_executor',
+                    {
+                        'index': index,
+                        'count_in_branch': state.count,
+                        'task_in_branch': state.task,
+                        'strictness': state.task_strictness,
+                        'strategy': state.strategies[index],
+                        'feedback': state.feedback,
+                        'work_dir': branch_workspace
+                    }
+                )
+            )
+        return sends
 
     def aggregate(self, state: TaskState):
         aggregated_results = [
@@ -134,10 +142,12 @@ class GCRI:
 
     def sample_hypothesis(self, state: BranchState):
         logger.info(f'Iter #{state.count_in_branch+1} | Request sampling hypothesis for strategy #{state.index}...')
+        work_dir = state.work_dir
         hypothesis_config = self.config.agents.branches[state.index].hypothesis
         agent = build_model(
             hypothesis_config.model_id,
             hypothesis_config.get('gcri_options'),
+            work_dir=work_dir,
             **hypothesis_config.parameters
         )
         template_path = self.config.templates.hypothesis
@@ -162,10 +172,12 @@ class GCRI:
 
     def reasoning_and_refine(self, state: BranchState):
         logger.info(f'Iter #{state.count_in_branch+1} | Request reasoning and refining hypothesis #{state.index}...')
+        work_dir = state.work_dir
         reasoning_config = self.config.agents.branches[state.index].reasoning
         agent = build_model(
             reasoning_config.model_id,
             reasoning_config.get('gcri_options'),
+            work_dir=work_dir,
             **reasoning_config.parameters
         )
         template_path = self.config.templates.reasoning
@@ -208,10 +220,12 @@ class GCRI:
 
     def verify(self, state: BranchState):
         logger.info(f'Iter #{state.count_in_branch+1} | Request verifying refined hypothesis #{state.index}...')
+        work_dir = state.work_dir
         verification_config = self.config.agents.branches[state.index].verification
         agent = build_model(
             verification_config.model_id,
             verification_config.get('gcri_options'),
+            work_dir=work_dir,
             **verification_config.parameters
         )
         template_path = self.config.templates.verification
