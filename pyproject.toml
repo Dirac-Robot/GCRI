@@ -56,3 +56,6 @@ dependencies = [
 
 [project.scripts]
 gcri = "gcri.entry:cli_entry"
+
+[tool.setuptools.package-data]
+"gcri" = ["templates/**/*"]

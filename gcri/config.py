@@ -1,8 +1,23 @@
+from importlib import resources
+from pathlib import Path
+
 from ato.adict import ADict
 from ato.scope import Scope
 
 scope = Scope(config=ADict.auto())
 AGENT_NAMES_IN_BRANCH = ['hypothesis', 'reasoning', 'verification']
+
+
+def get_template_path(file_path: str) -> str:
+    try:
+        with resources.path('gcri.templates', file_path) as path:
+            return str(path)
+    except (ImportError, TypeError, ModuleNotFoundError):
+        current_dir = Path(__file__).resolve().parent
+        path = current_dir/'templates'/file_path
+        if path.exists():
+            return str(path)
+        raise FileNotFoundError(f'Template not found: {file_path}')
 
 
 @scope.observe(default=True)
@@ -58,16 +73,16 @@ def default(config):
         )
     )
     config.templates = dict(
-        planner='./gcri/templates/planner.txt',
-        compression='./gcri/templates/compression.txt',
-        black_and_white_lists='./gcri/templates/black_and_white_lists.json',
-        strategy_generator='./gcri/templates/strategy_generator.txt',
-        hypothesis='./gcri/templates/hypothesis.txt',
-        reasoning='./gcri/templates/reasoning.txt',
-        verification='./gcri/templates/verification.txt',
-        decision='./gcri/templates/decision.txt',
-        memory='./gcri/templates/memory.txt',
-        active_memory='./gcri/templates/active_memory.txt'
+        planner=get_template_path('planner.txt'),
+        compression=get_template_path('compression.txt'),
+        black_and_white_lists=get_template_path('black_and_white_lists.json'),
+        strategy_generator=get_template_path('strategy_generator.txt'),
+        hypothesis=get_template_path('hypothesis.txt'),
+        reasoning=get_template_path('reasoning.txt'),
+        verification=get_template_path('verification.txt'),
+        decision=get_template_path('decision.txt'),
+        memory=get_template_path('memory.txt'),
+        active_memory=get_template_path('active_memory.txt'),
     )
     config.plan.num_max_tasks = 3
     config.max_iterations = 3
