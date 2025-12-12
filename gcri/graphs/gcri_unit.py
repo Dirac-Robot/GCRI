@@ -89,7 +89,7 @@ class GCRI:
         os.makedirs(root_dir, exist_ok=True)
         sends = []
         for index in range(num_branches):
-            branch_workspace = os.path.join(root_dir, f'branch_{index}')
+            branch_workspace = os.path.join(root_dir, f'iter_{state.count}_branch_{index}')
             os.makedirs(branch_workspace, exist_ok=True)
             sends.append(
                 Send(
