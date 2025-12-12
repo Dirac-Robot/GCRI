@@ -54,6 +54,9 @@ dependencies = [
     "zstandard~=0.25.0",
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+
 [project.scripts]
 gcri = "gcri.entry:cli_entry"
 
