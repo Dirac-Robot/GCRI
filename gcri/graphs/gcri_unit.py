@@ -42,9 +42,11 @@ class GCRI:
             **strategy_generator_config.parameters
         ).with_structured_output(schema=Strategies)
         decision_config = config.agents.decision
+        self._work_dir = os.getcwd()
         decision_agent = build_model(
             decision_config.model_id,
             decision_config.get('gcri_options'),
+            work_dir=self._work_dir,
             **decision_config.parameters
         ).with_structured_output(schema=Decision)
         memory_config = config.agents.memory
@@ -73,7 +75,15 @@ class GCRI:
         self._graph = graph
         self._workflow = graph.compile()
         log_dir = os.path.join(config.log_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
-        self.log_dir = log_dir
+        self._log_dir = log_dir
+
+    @property
+    def work_dir(self):
+        return self._work_dir
+
+    @property
+    def log_dir(self):
+        return self._log_dir
 
     @property
     def graph(self):
@@ -272,12 +282,24 @@ class GCRI:
 
     def decide(self, state: TaskState):
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
+        file_contexts = []
+        num_results = len(state.results)
+        workspace_root = os.path.join(self.log_dir, 'workspaces')
+        for i in range(num_results):
+            branch_dir = os.path.join(workspace_root, f'iter_{state.count}_branch_{i}')
+            if os.path.exists(branch_dir):
+                rel_path = os.path.relpath(branch_dir, start=self.work_dir)
+                file_contexts.append(f'- Branch {i} files location: {rel_path}')
+            else:
+                file_contexts.append(f'- Branch {i} files location: (Directory not found)')
+        file_contexts = '\n'.join(file_contexts)
         template_path = self.config.templates.decision
         with open(template_path, 'r') as f:
             template = f.read()
         template = template.format(
             task=state.task,
             aggregated_result=state.aggregated_result,
+            file_contexts=file_contexts,
             failure_category_list=self._get_failure_category_description()
         )
         for _ in range(self.config.protocols.max_tries_per_agent):

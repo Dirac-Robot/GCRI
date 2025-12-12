@@ -1,5 +1,4 @@
 import ast
-import io
 import os
 import subprocess
 import sys
@@ -23,12 +22,22 @@ from gcri.config import scope
 
 console = Console(force_terminal=True)
 CWD_VAR = ContextVar('cwd', default='.')
+PROJECT_ROOT = os.getcwd()
 
 
 def get_cwd():
     d = CWD_VAR.get()
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def get_environment_with_pythonpath(cwd):
+    environment = os.environ.copy()
+    prev_python_path = environment.get('PYTHONPATH', '')
+    next_python_path = f'{cwd}{os.pathsep}{PROJECT_ROOT}{os.pathsep}{prev_python_path}'
+    environment['PYTHONPATH'] = next_python_path
+    environment['PYTHONUNBUFFERED'] = '1'
+    return environment
 
 
 @scope
@@ -43,11 +52,20 @@ def _get_black_and_white_lists(config):
 def execute_shell_command(command: str) -> str:
     """Executes a shell command."""
     cwd = get_cwd()
+    environment = get_environment_with_pythonpath(cwd)
     try:
-        res = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60, cwd=cwd)
-        if res.returncode == 0:
-            return res.stdout if res.stdout.strip() else '(Success, no output)'
-        return f'Exit Code {res.returncode}:\n{res.stderr}'
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=cwd,
+            env=environment
+        )
+        if result.returncode == 0:
+            return result.stdout if result.stdout.strip() else '(Success, no output)'
+        return f'Exit Code {result.returncode}:\n{result.stderr}'
     except subprocess.TimeoutExpired:
         return 'Error: Command timed out.'
     except Exception as e:
@@ -86,20 +104,28 @@ def write_file(filepath: str, content: str) -> str:
 def local_python_interpreter(code: str) -> str:
     """Executes Python code locally."""
     cwd = get_cwd()
+    environment = get_environment_with_pythonpath(cwd)
     script_name = f'_script_{uuid.uuid4().hex[:8]}.py'
     target = os.path.join(cwd, script_name)
     try:
         with open(target, 'w', encoding='utf-8') as f:
             f.write(code)
-        res = subprocess.run([sys.executable, script_name], capture_output=True, text=True, timeout=30, cwd=cwd)
+        result = subprocess.run(
+            [sys.executable, script_name],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=cwd,
+            env=environment
+        )
         try:
             os.remove(target)
         except:
             pass
-        out = res.stdout+res.stderr
-        if res.returncode != 0:
-            return f'Execution failed (Exit {res.returncode}):\n{out}'
-        return out if out.strip() else '(No output printed)'
+        output = result.stdout+result.stderr
+        if result.returncode != 0:
+            return f'Execution failed (Exit {result.returncode}):\n{output}'
+        return output if output.strip() else '(No output printed)'
     except Exception as e:
         return f'Error running python: {e}'
 
