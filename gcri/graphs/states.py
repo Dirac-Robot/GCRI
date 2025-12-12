@@ -76,3 +76,13 @@ class BranchState(BaseModel):
     reasoning: Optional[str] = None
     results: List[HypothesisResult] = Field(default_factory=list)
 
+
+class GlobalState(BaseModel):
+    goal: str
+    knowledge_context: List[str] = Field(default_factory=list)
+    current_task: Optional[str] = None
+    final_answer: Optional[str] = None
+    mid_result: Optional[str] = None
+    plan_count: int = 0
+    memory: StructuredMemory = Field(default_factory=StructuredMemory)
+

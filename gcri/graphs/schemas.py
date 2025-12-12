@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+
 class RefutationStatus(str, Enum):
     VALID = 'valid'
     REFUTED = 'refuted'
@@ -18,7 +19,7 @@ class FailureCategory(str, Enum):
     OTHER = 'other'
 
 
-class ConstraintList(BaseModel):
+class ActiveConstraints(BaseModel):
     new_active_constraints: List[str] = Field(
         description='Extract all explicit, mandatory rules or constraints from the input feedback. '
                     'Must be clear, independent sentences.'
@@ -51,21 +52,35 @@ class Verification(BaseModel):
     )
 
 
-class Compression(BaseModel):
-    compressed_output: str
-
-
 class BranchAnalysis(BaseModel):
     branch_index: int
-    summary_hypothesis: str = Field(..., description='가설의 핵심 아이디어 요약 (1-2문장)')
-    summary_counter_example: str = Field(..., description='제기된 반례의 핵심 내용 요약')
-    status: RefutationStatus = Field(..., description='반례에 의한 가설의 기각 여부')
+    summary_hypothesis: str = Field(..., description='Core idea summary of the hypothesis (1-2 sentences)')
+    summary_counter_example: str = Field(..., description='Core summary of the raised counter-example')
+    status: RefutationStatus = Field(..., description='Refutation status of the hypothesis by the counter-example')
     failure_category: FailureCategory
-    reasoning: str = Field(..., description='왜 이 가설이 생존/기각 되었는지에 대한 판단 근거')
+    reasoning: str = Field(..., description='Basis for judgment on whether the hypothesis survived or was rejected')
 
 
 class Decision(BaseModel):
-    decision: bool = Field(..., description='최종 승인 여부 (하나라도 완벽하면 True)')
-    final_output: Optional[str] = Field(None, description='최종 채택된 완벽한 답변')
-    global_feedback: Optional[str] = Field(None, description='모든 실패를 종합했을 때 다음 턴에 필요한 전략적 방향성')
-    branch_evaluations: List[BranchAnalysis] = Field(..., description='각 브랜치에 대한 상세 평가 리스트')
+    decision: bool = Field(..., description='Final approval decision (True if at least one is perfect)')
+    final_output: Optional[str] = Field(None, description='The final adopted perfect answer')
+    global_feedback: Optional[str] = Field(
+        None,
+        description='Strategic direction for the next turn synthesizing all failures'
+    )
+    branch_evaluations: List[BranchAnalysis] = Field(..., description='Detailed evaluation list for each branch')
+
+
+class Plan(BaseModel):
+    thought: str = Field(description='Reasoning for the current analysis and plan formulation')
+    next_task: Optional[str] = Field(description='Specific single task to be performed next (None if finished)')
+    final_answer: Optional[str] = Field(description='Final answer if the goal is achieved (None if in progress)')
+    is_finished: bool = Field(description='Whether the goal has been achieved')
+
+
+class Compression(BaseModel):
+    summary: str = Field(description='Updated high-level knowledge summary incorporating the latest result.')
+    retained_constraints: List[str] = Field(
+        description='Filtered list of active constraints. Remove duplicates, obsolete rules, or trivial details.'
+    )
+    discard_reason: str = Field(description='Brief reason why certain details were compressed or discarded.')

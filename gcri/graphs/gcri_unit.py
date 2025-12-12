@@ -1,9 +1,7 @@
 import json
 import os
 from datetime import datetime
-from functools import partial
 
-from langchain.chat_models import init_chat_model
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from langgraph.types import Send
@@ -17,20 +15,13 @@ from gcri.graphs.schemas import (
     Strategies,
     Decision,
     FailureCategory,
-    ConstraintList
+    ActiveConstraints
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
+from gcri.tools.cli import build_model
 
 
-def build_model(model_id, gcri_options=None, **parameters):
-    agent = init_chat_model(model_id, **parameters)
-    if gcri_options:
-        if gcri_options.get('use_code_tools', False):
-            agent = agent.bind_tools([dict(type='code_interpreter', container={'type': 'auto'})])
-    return agent
-
-
-class SingleGCRITask:
+class GCRI:
     def __init__(self, config):
         self.config = config
         graph = StateGraph(TaskState)
@@ -49,23 +40,26 @@ class SingleGCRITask:
             strategy_generator_config.model_id,
             strategy_generator_config.get('gcri_options'),
             **strategy_generator_config.parameters
-        )
+        ).with_structured_output(schema=Strategies)
         decision_config = config.agents.decision
         decision_agent = build_model(
             decision_config.model_id,
             decision_config.get('gcri_options'),
             **decision_config.parameters
-        )
+        ).with_structured_output(schema=Decision)
         memory_config = config.agents.memory
         memory_agent = build_model(
             memory_config.model_id,
             memory_config.get('gcri_options'),
             **memory_config.parameters
-        )
-        graph.add_node('sample_strategies', partial(self.sample_strategies, agent=strategy_agent))
+        ).with_structured_output(schema=ActiveConstraints)
+        self._strategy_agent = strategy_agent
+        self._decision_agent = decision_agent
+        self._memory_agent = memory_agent
+        graph.add_node('sample_strategies', self.sample_strategies)
         graph.add_node('aggregate', self.aggregate)
-        graph.add_node('decision', partial(self.decide, agent=decision_agent))
-        graph.add_node('update_memory', partial(self.update_memory, agent=memory_agent))
+        graph.add_node('decision', self.decide)
+        graph.add_node('update_memory', self.update_memory)
         graph.add_edge(START, 'sample_strategies')
         graph.add_conditional_edges(
             'sample_strategies',
@@ -116,8 +110,8 @@ class SingleGCRITask:
         ]
         return {'aggregated_result': json.dumps(aggregated_results, indent=4, ensure_ascii=False)}
 
-    def sample_strategies(self, state: TaskState, agent):
-        logger.info(f'Iter #{state.count} | Request generating strategies...')
+    def sample_strategies(self, state: TaskState):
+        logger.info(f'Iter #{state.count+1} | Request generating strategies...')
         template_path = self.config.templates.strategy_generator
         with open(template_path, 'r') as f:
             template = f.read().format(
@@ -126,7 +120,7 @@ class SingleGCRITask:
                 num_hypothesis=len(self.config.agents.branches)
             )
         for _ in range(self.config.protocols.max_tries_per_agent):
-            strategies = agent.with_structured_output(schema=Strategies).invoke(template)
+            strategies = self.strategy_agent.invoke(template)
             if strategies is not None:
                 break
         else:
@@ -135,11 +129,11 @@ class SingleGCRITask:
                 f'for {self.config.protocols.max_tries_per_agent} times.'
             )
         for index, strategy in enumerate(strategies.strategies):
-            logger.info(f'Iter #{state.count} | Sampled strategy #{index}: {strategy}')
+            logger.info(f'Iter #{state.count+1} | Sampled strategy #{index}: {strategy}')
         return dict(strategies=strategies.strategies)
 
     def sample_hypothesis(self, state: BranchState):
-        logger.info(f'Iter #{state.count_in_branch} | Request sampling hypothesis for strategy #{state.index}...')
+        logger.info(f'Iter #{state.count_in_branch+1} | Request sampling hypothesis for strategy #{state.index}...')
         hypothesis_config = self.config.agents.branches[state.index].hypothesis
         agent = build_model(
             hypothesis_config.model_id,
@@ -163,11 +157,11 @@ class SingleGCRITask:
                 f'for {self.config.protocols.max_tries_per_agent} times '
                 f'at strategy #{state.index}.'
             )
-        logger.info(f'Iter #{state.count_in_branch} | Sampled hypothesis #{state.index}: {hypothesis.hypothesis}')
+        logger.info(f'Iter #{state.count_in_branch+1} | Sampled hypothesis #{state.index}: {hypothesis.hypothesis}')
         return dict(hypothesis=hypothesis.hypothesis)
 
     def reasoning_and_refine(self, state: BranchState):
-        logger.info(f'Iter #{state.count_in_branch} | Request reasoning and refining hypothesis #{state.index}...')
+        logger.info(f'Iter #{state.count_in_branch+1} | Request reasoning and refining hypothesis #{state.index}...')
         reasoning_config = self.config.agents.branches[state.index].reasoning
         agent = build_model(
             reasoning_config.model_id,
@@ -192,7 +186,7 @@ class SingleGCRITask:
                 f'at hypothesis #{state.index}.'
             )
         logger.info(
-            f'Iter #{state.count_in_branch} | '
+            f'Iter #{state.count_in_branch+1} | '
             f'Refined hypothesis #{state.index}: {reasoning.refined_hypothesis}'
         )
         return dict(
@@ -200,11 +194,20 @@ class SingleGCRITask:
             hypothesis=reasoning.refined_hypothesis
         )
 
-    def improve(self, state: TaskState, agent):
-        pass
+    @property
+    def strategy_agent(self):
+        return self._strategy_agent
+
+    @property
+    def decision_agent(self):
+        return self._decision_agent
+
+    @property
+    def memory_agent(self):
+        return self._memory_agent
 
     def verify(self, state: BranchState):
-        logger.info(f'Iter #{state.count_in_branch} | Request verifying refined hypothesis #{state.index}...')
+        logger.info(f'Iter #{state.count_in_branch+1} | Request verifying refined hypothesis #{state.index}...')
         verification_config = self.config.agents.branches[state.index].verification
         agent = build_model(
             verification_config.model_id,
@@ -240,7 +243,7 @@ class SingleGCRITask:
             adjustment=verification.adjustment
         )
         logger.info(
-            f'Iter #{state.count_in_branch} | '
+            f'Iter #{state.count_in_branch+1} | '
             f'Counter-Example of Hypothesis #{state.index}(Counter Strength: {verification.counter_strength}): '
             f'{verification.counter_example}'
         )
@@ -253,8 +256,8 @@ class SingleGCRITask:
             descriptions.append(f'- {code.value}')
         return '\n'.join(descriptions)
 
-    def decide(self, state: TaskState, agent):
-        logger.info(f'Iter #{state.count} | Request generating final decision for current loop...')
+    def decide(self, state: TaskState):
+        logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
         template_path = self.config.templates.decision
         with open(template_path, 'r') as f:
             template = f.read()
@@ -264,7 +267,7 @@ class SingleGCRITask:
             failure_category_list=self._get_failure_category_description()
         )
         for _ in range(self.config.protocols.max_tries_per_agent):
-            decision = agent.with_structured_output(schema=Decision).invoke(template)
+            decision = self.decision_agent.invoke(template)
             if decision is not None:
                 break
         else:
@@ -282,7 +285,7 @@ class SingleGCRITask:
             'branch_evaluations': decision.branch_evaluations
         }
 
-    def update_memory(self, state: TaskState, agent):
+    def update_memory(self, state: TaskState):
         current_memory = state.memory
         memory_template_path = self.config.templates.memory
         with open(memory_template_path, 'r') as f:
@@ -300,11 +303,12 @@ class SingleGCRITask:
                 active_memory_template = f.read()
             try:
                 active_memory_template = active_memory_template.format(global_feedback=global_feedback)
-                active_memory = agent.with_structured_output(schema=ConstraintList).invoke(active_memory_template)
+                memory_agent = self.memory_agent
+                active_memory = memory_agent.invoke(active_memory_template)
                 new_constraints = active_memory.new_active_constraints
             except Exception as e:
                 logger.error(
-                    f'Iter #{state.count} | '
+                    f'Iter #{state.count+1} | '
                     f'Constraint extraction failed: {e}. '
                     f'Falling back to old constraints.'
                 )
@@ -313,24 +317,26 @@ class SingleGCRITask:
             current_set.update(new_constraints)
             current_memory.active_constraints = list(current_set)
         integrated_feedback = current_memory.format_for_strategy(memory_template)
-        logger.info(f'Iter #{state.count} | Memory saved:\n{current_memory}')
-        logger.info(f'Iter #{state.count} | Integrated feedback from memorized information:\n{integrated_feedback}')
+        logger.info(f'Iter #{state.count+1} | Memory saved:\n{current_memory}')
+        logger.info(f'Iter #{state.count+1} | Integrated feedback from memorized information:\n{integrated_feedback}')
         return {
             'memory': current_memory,
             'feedback': integrated_feedback
         }
 
-    def __call__(self, task):
+    def __call__(self, task, initial_memory=None):
         feedback = ''
-        memory = StructuredMemory()
+        memory = initial_memory if initial_memory is not None else StructuredMemory()
         result = None
         for index in range(self.config.max_iterations):
-            result = self.workflow.invoke({
-                'count': index,
-                'task': task,
-                'feedback': feedback,
-                'memory': memory
-            })
+            result = self.workflow.invoke(
+                {
+                    'count': index,
+                    'task': task,
+                    'feedback': feedback,
+                    'memory': memory
+                }
+            )
             result = TypeAdapter(TaskState).validate_python(result).model_dump(mode='json')
             os.makedirs(self.log_dir, exist_ok=True)
             log_path = os.path.join(self.log_dir, f'log_iteration_{index:02d}.json')
@@ -341,7 +347,7 @@ class SingleGCRITask:
                 logger.info('Final result is successfully deduced.')
                 return result
             else:
-                memory = result['memory']
+                memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])
                 feedback = result['feedback']
         logger.info('Final result is not deduced, but iteration count is over.')
         return result

@@ -40,3 +40,7 @@ jsonpointer~=3.0.0
 jsonpatch~=1.33
 langchain-openai~=1.1.0
 python-dotenv~=1.2.1
+rich~=14.2.0
+Pygments~=2.19.2
+markdown-it-py~=4.0.0
+mdurl~=0.1.2

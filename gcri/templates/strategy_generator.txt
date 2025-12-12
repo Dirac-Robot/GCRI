@@ -44,6 +44,11 @@ All strategies must use the SAME strictness value. Do NOT vary strictness per st
    Policy influences the *direction and intensity* of exploration vs commitment, but does NOT override strictness, and must NOT dictate the content of the solution itself.
 10. If the Strategy Graveyard contains multiple failed attempts that all share a common core assumption or conclusion,
     you MUST generate at least one 'Contrarian Strategy' that challenges that core assumption.
+11. Efficiency Clause:
+    (a) Assess the task complexity before generating strategies.
+    (b) For "Simple/Trivial" tasks (e.g., simple fact retrieval, basic arithmetic, greeting), generate ONLY 1 strategy regardless of {num_hypothesis}.
+    (c) For complex tasks, prioritize diversity up to {num_hypothesis}.
+    (d) Quality and correctness > Quantity.
 
 Output format:
 - strictness: strict / moderate / creative   ← MUST appear before the strategy list
