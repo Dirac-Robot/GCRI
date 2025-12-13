@@ -364,26 +364,40 @@ class GCRI:
         feedback = ''
         memory = initial_memory if initial_memory is not None else StructuredMemory()
         result = None
-        for index in range(self.config.max_iterations):
-            result = self.workflow.invoke(
-                {
-                    'count': index,
-                    'task': task,
-                    'feedback': feedback,
-                    'memory': memory
-                }
-            )
-            result = TypeAdapter(TaskState).validate_python(result).model_dump(mode='json')
-            os.makedirs(self.log_dir, exist_ok=True)
-            log_path = os.path.join(self.log_dir, f'log_iteration_{index:02d}.json')
-            with open(log_path, 'w', encoding='utf-8') as f:
-                json.dump(result, f, indent=4, ensure_ascii=False)
-            logger.info(f'Result of iteration {index} saved to: {log_path}')
-            if result['decision']:
-                logger.info('Final result is successfully deduced.')
+        try:
+            for index in range(self.config.max_iterations):
+                logger.info(f'Starting Iteration {index}...')
+                try:
+                    result = self.workflow.invoke(
+                        {
+                            'count': index,
+                            'task': task,
+                            'feedback': feedback,
+                            'memory': memory
+                        }
+                    )
+                    result = TypeAdapter(TaskState).validate_python(result).model_dump(mode='json')
+                    os.makedirs(self.log_dir, exist_ok=True)
+                    log_path = os.path.join(self.log_dir, f'log_iteration_{index:02d}.json')
+                    with open(log_path, 'w', encoding='utf-8') as f:
+                        json.dump(result, f, indent=4, ensure_ascii=False)
+                    logger.info(f'Result of iteration {index} saved to: {log_path}')
+
+                    if result['decision']:
+                        logger.info('Final result is successfully deduced.')
+                        return result
+                    else:
+                        memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])
+                        feedback = result['feedback']
+                except KeyboardInterrupt:
+                    logger.warning(f'Iteration {index} interrupted by user. Stopping...')
+                    raise
+        except KeyboardInterrupt:
+            logger.warning('GCRI Task interrupted by user (Ctrl+C). Returning last state.')
+            if result:
+                result['final_output'] = 'Task aborted by user.'
                 return result
-            else:
-                memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])
-                feedback = result['feedback']
+            return {'final_output': 'Task aborted by user before first iteration completion.'}
+
         logger.info('Final result is not deduced, but iteration count is over.')
         return result
