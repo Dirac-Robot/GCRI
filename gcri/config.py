@@ -173,7 +173,7 @@ def gpt_4_1_based(config):
 
 
 @scope.observe()
-def local_llm_based(config):
+def local_qwen(config):
     config.agents.endpoint_url = 'http://localhost:8000/v1'
 
     with scope.lazy():
