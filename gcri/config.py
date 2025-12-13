@@ -1,8 +1,10 @@
+import os
 from importlib import resources
 from pathlib import Path
 
 from ato.adict import ADict
 from ato.scope import Scope
+from loguru import logger
 
 scope = Scope(config=ADict.auto())
 AGENT_NAMES_IN_BRANCH = ['hypothesis', 'reasoning', 'verification']
@@ -22,6 +24,7 @@ def get_template_path(file_path: str) -> str:
 
 @scope.observe(default=True)
 def default(config):
+    config.custom_config_path = None
     config.agents.planner = dict(
         model_id='gpt-5.2',
         parameters=dict(
@@ -98,6 +101,17 @@ def default(config):
     config.log_dir = './gcri_logs'
 
 
+@scope.observe(default=True, lazy=True)
+def apply_custom_config(config):
+    if config.custom_config_path is not None:
+        if os.path.exists(config.custom_config_path):
+            logger.info(f'Override with custom config: {config.custom_config_path}')
+            config.update(ADict.from_file(config.custom_config_path), recurrent=True)
+        else:
+            logger.warning(f'Cannot find custom config: {config.custom_config_path}')
+            logger.warning(f'Fallback to default config...')
+
+
 @scope.observe()
 def large_models(config):
     config.agents.branches = [
@@ -160,80 +174,83 @@ def gpt_4_1_based(config):
 
 @scope.observe()
 def local_llm_based(config):
-    config.agents.planner = dict(
-        model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-        parameters=dict(
-            max_tokens=25600,
-            model_provider='openai',
-            base_url='http://localhost:8000/v1',
-            api_key='EMPTY',
-            temperature=0
+    config.agents.endpoint_url = 'http://localhost:8000/v1'
+
+    with scope.lazy():
+        config.agents.planner = dict(
+            model_id='Qwen/Qwen2.5-72B-Instruct',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            )
         )
-    )
-    config.agents.compression = dict(
-        model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-        parameters=dict(
-            max_tokens=25600,
-            model_provider='openai',
-            base_url='http://localhost:8000/v1',
-            api_key='EMPTY',
-            temperature=0
+        config.agents.compression = dict(
+            model_id='Qwen/Qwen2.5-72B-Instruct',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            )
         )
-    )
-    config.agents.strategy_generator = dict(
-        model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-        parameters=dict(
-            max_tokens=25600,
-            model_provider='openai',
-            base_url='http://localhost:8000/v1',
-            api_key='EMPTY',
-            temperature=0
+        config.agents.strategy_generator = dict(
+            model_id='Qwen/Qwen2.5-72B-Instruct',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            )
         )
-    )
-    config.agents.branches = [
-        {
-            agent_name: dict(
-                model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-                parameters=dict(
-                    max_tokens=25600,
-                    model_provider='openai',
-                    base_url='http://localhost:8000/v1',
-                    api_key='EMPTY',
-                    temperature=0
-                ),
-                gcri_options=dict(
-                    use_code_tools=True,
-                    use_web_search=True,
-                    max_recursion_depth=30
-                )
-            ) for agent_name in AGENT_NAMES_IN_BRANCH
-        } for _ in range(3)
-    ]
-    config.agents.decision = dict(
-        model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-        parameters=dict(
-            max_tokens=25600,
-            model_provider='openai',
-            base_url='http://localhost:8000/v1',
-            api_key='EMPTY',
-            temperature=0
-        ),
-        gcri_options=dict(
-            use_code_tools=True,
-            use_web_search=True
+        config.agents.branches = [
+            {
+                agent_name: dict(
+                    model_id='Qwen/Qwen2.5-72B-Instruct',
+                    parameters=dict(
+                        max_tokens=25600,
+                        model_provider='openai',
+                        base_url=config.agents.endpoint_url,
+                        api_key='EMPTY',
+                        temperature=0
+                    ),
+                    gcri_options=dict(
+                        use_code_tools=True,
+                        use_web_search=True,
+                        max_recursion_depth=30
+                    )
+                ) for agent_name in AGENT_NAMES_IN_BRANCH
+            } for _ in range(3)
+        ]
+        config.agents.decision = dict(
+            model_id='Qwen/Qwen2.5-72B-Instruct',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            ),
+            gcri_options=dict(
+                use_code_tools=True,
+                use_web_search=True
+            )
         )
-    )
-    config.agents.memory = dict(
-        model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-        parameters=dict(
-            max_tokens=25600,
-            model_provider='openai',
-            base_url='http://localhost:8000/v1',
-            api_key='EMPTY',
-            temperature=0
-        ),
-        gcri_options=dict(
-            use_code_tools=True,
-            use_web_search=True
+        config.agents.memory = dict(
+            model_id='Qwen/Qwen2.5-72B-Instruct',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            ),
+            gcri_options=dict(
+                use_code_tools=True,
+                use_web_search=True
+            )
         )
-    )
