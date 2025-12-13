@@ -254,3 +254,87 @@ def local_qwen(config):
                 use_web_search=True
             )
         )
+
+
+@scope.observe(default=True)
+def local_llama(config):
+    config.agents.endpoint_url = 'http://localhost:8000/v1'
+
+    with scope.lazy():
+        config.agents.planner = dict(
+            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            )
+        )
+        config.agents.compression = dict(
+            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            )
+        )
+        config.agents.strategy_generator = dict(
+            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            )
+        )
+        config.agents.branches = [
+            {
+                agent_name: dict(
+                    model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
+                    parameters=dict(
+                        max_tokens=25600,
+                        model_provider='openai',
+                        base_url=config.agents.endpoint_url,
+                        api_key='EMPTY',
+                        temperature=0
+                    ),
+                    gcri_options=dict(
+                        use_code_tools=True,
+                        use_web_search=True,
+                        max_recursion_depth=30
+                    )
+                ) for agent_name in AGENT_NAMES_IN_BRANCH
+            } for _ in range(3)
+        ]
+        config.agents.decision = dict(
+            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            ),
+            gcri_options=dict(
+                use_code_tools=True,
+                use_web_search=True
+            )
+        )
+        config.agents.memory = dict(
+            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
+            parameters=dict(
+                max_tokens=25600,
+                model_provider='openai',
+                base_url=config.agents.endpoint_url,
+                api_key='EMPTY',
+                temperature=0
+            ),
+            gcri_options=dict(
+                use_code_tools=True,
+                use_web_search=True
+            )
+        )
