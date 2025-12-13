@@ -2,10 +2,12 @@ import ast
 import os
 import subprocess
 import sys
+import threading
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, List, Type
+from loguru import logger
 
 from ato.adict import ADict
 from langchain.chat_models import init_chat_model
@@ -23,6 +25,8 @@ from gcri.config import scope
 console = Console(force_terminal=True)
 CWD_VAR = ContextVar('cwd', default='.')
 PROJECT_ROOT = os.getcwd()
+AUTO_MODE_FILE = os.path.join(PROJECT_ROOT, '.gcri_auto_mode')
+logger.info(f'AUTO MODE FILE SET TO: {AUTO_MODE_FILE}')
 
 
 def get_cwd():
@@ -31,7 +35,7 @@ def get_cwd():
     return d
 
 
-def get_environment_with_pythonpath(cwd):
+def get_environment_with_python_path(cwd):
     environment = os.environ.copy()
     prev_python_path = environment.get('PYTHONPATH', '')
     next_python_path = f'{cwd}{os.pathsep}{PROJECT_ROOT}{os.pathsep}{prev_python_path}'
@@ -52,7 +56,7 @@ def _get_black_and_white_lists(config):
 def execute_shell_command(command: str) -> str:
     """Executes a shell command."""
     cwd = get_cwd()
-    environment = get_environment_with_pythonpath(cwd)
+    environment = get_environment_with_python_path(cwd)
     try:
         result = subprocess.run(
             command,
@@ -104,7 +108,7 @@ def write_file(filepath: str, content: str) -> str:
 def local_python_interpreter(code: str) -> str:
     """Executes Python code locally."""
     cwd = get_cwd()
-    environment = get_environment_with_pythonpath(cwd)
+    environment = get_environment_with_python_path(cwd)
     script_name = f'_script_{uuid.uuid4().hex[:8]}.py'
     target = os.path.join(cwd, script_name)
     try:
@@ -134,9 +138,10 @@ CLI_TOOLS = [execute_shell_command, read_file, write_file, local_python_interpre
 
 
 class InteractiveToolGuard:
+    _io_lock = threading.Lock()
+
     def __init__(self):
         self.tools = {t.name: t for t in CLI_TOOLS}
-        self.auto_mode = False
         try:
             self._black_and_white_lists = _get_black_and_white_lists()
         except:
@@ -146,6 +151,22 @@ class InteractiveToolGuard:
                 'sensitive_modules': set(),
                 'safe_extensions': set()
             }
+
+    @property
+    def auto_mode(self):
+        return os.path.exists(AUTO_MODE_FILE)
+
+    @auto_mode.setter
+    def auto_mode(self, value):
+        if value:
+            with open(AUTO_MODE_FILE, 'a'):
+                os.utime(AUTO_MODE_FILE, None)
+        else:
+            if os.path.exists(AUTO_MODE_FILE):
+                try:
+                    os.remove(AUTO_MODE_FILE)
+                except OSError:
+                    pass
 
     def _analyze_python_code(self, code: str):
         try:
@@ -187,87 +208,88 @@ class InteractiveToolGuard:
             return self._analyze_python_code(args.get('code', ''))
         return False, None
 
-    def invoke(self, name, args, tid):
-        current_ws = CWD_VAR.get()
-        console.print(
-            Panel(f'Agent Request: [bold cyan]{name}[/]\nWorkspace: [dim]{current_ws}[/]', border_style='blue')
-        )
+    def invoke(self, name, args, task_id):
+        with self._io_lock:
+            current_ws = CWD_VAR.get()
+            console.print(
+                Panel(f'Agent Request: [bold cyan]{name}[/]\nWorkspace: [dim]{current_ws}[/]', border_style='blue')
+            )
 
-        if 'code' in args:
-            console.print(Syntax(args['code'], 'python', theme='monokai', line_numbers=True))
-        elif 'command' in args:
-            console.print(Syntax(args['command'], 'bash', theme='monokai'))
-        else:
-            console.print(str(args))
+            if 'code' in args:
+                console.print(Syntax(args['code'], 'python', theme='monokai', line_numbers=True))
+            elif 'command' in args:
+                console.print(Syntax(args['command'], 'bash', theme='monokai'))
+            else:
+                console.print(str(args))
 
-        is_sensitive, reason = self._is_sensitive(name, args)
+            is_sensitive, reason = self._is_sensitive(name, args)
 
-        if self.auto_mode and not is_sensitive:
-            console.print(f'[bold green]⚡ Auto-Executing Task {tid} (Safe)[/]')
-            try:
-                res = self.tools[name].invoke(args)
-                console.print(f'[dim]Result: {str(res)[:100]}...[/]')
-                return str(res)
-            except Exception as e:
-                return f'Tool Error: {e}'
-
-        while True:
-            console.print('[bold yellow]>> (y)es / (a)lways / (n)o / (e)dit : [/]', end='')
-            sys.stdout.flush()
-            choice = input().strip().lower()
-
-            if choice == 'y':
-                console.print(f'[dim]Executing Task {tid}...[/]')
+            if self.auto_mode and not is_sensitive:
+                console.print(f'[bold green]⚡ Auto-Executing Task {task_id} (Safe)[/]')
                 try:
-                    res = self.tools[name].invoke(args)
-                    console.print('[bold green]Done.[/]')
-                    return str(res)
+                    result = self.tools[name].invoke(args)
+                    console.print(f'[dim]Result: {str(result)[:100]}...[/]')
+                    return str(result)
                 except Exception as e:
                     return f'Tool Error: {e}'
-            elif choice == 'a':
-                console.print('[bold green]⚡ Auto-Mode Enabled.[/]')
-                self.auto_mode = True
-                try:
-                    res = self.tools[name].invoke(args)
-                    console.print('[bold green]Done.[/]')
-                    return str(res)
-                except Exception as e:
-                    return f'Tool Error: {e}'
-            elif choice == 'n':
-                console.print('[bold red]Denied.[/]')
-                return 'User denied execution.'
-            elif choice == 'e':
-                console.print('[bold magenta]Manual Override (Type "EOF" to finish)[/]')
-                lines = []
-                while True:
-                    line = input()
-                    if line.strip() == 'EOF':
-                        break
-                    lines.append(line)
-                new_value = '\n'.join(lines)
-                if not new_value.strip():
-                    console.print('No input provided.')
-                    continue
-                if name == 'execute_shell_command':
-                    args['command'] = new_value
-                elif name == 'write_file':
-                    args['content'] = new_value
-                elif name == 'local_python_interpreter':
-                    args['code'] = new_value
-                console.print('[dim]Executing modified...[/]')
-                try:
-                    res = self.tools[name].invoke(args)
-                    console.print('[bold green]Done.[/]')
-                    return str(res)
-                except Exception as e:
-                    return f'Tool Error: {e}'
+
+            while True:
+                console.print('[bold yellow]>> (y)es / (a)lways / (n)o / (e)dit : [/]', end='')
+                sys.stdout.flush()
+                choice = input().strip().lower()
+
+                if choice == 'y':
+                    console.print(f'[dim]Executing Task {task_id}...[/]')
+                    try:
+                        result = self.tools[name].invoke(args)
+                        console.print('[bold green]Done.[/]')
+                        return str(result)
+                    except Exception as e:
+                        return f'Tool Error: {e}'
+                elif choice == 'a':
+                    console.print('[bold green]⚡ Auto-Mode Enabled.[/]')
+                    self.auto_mode = True
+                    try:
+                        result = self.tools[name].invoke(args)
+                        console.print('[bold green]Done.[/]')
+                        return str(result)
+                    except Exception as e:
+                        return f'Tool Error: {e}'
+                elif choice == 'n':
+                    console.print('[bold red]Denied.[/]')
+                    return 'User denied execution.'
+                elif choice == 'e':
+                    console.print('[bold magenta]Manual Override (Type "EOF" to finish)[/]')
+                    lines = []
+                    while True:
+                        line = input()
+                        if line.strip() == 'EOF':
+                            break
+                        lines.append(line)
+                    new_value = '\n'.join(lines)
+                    if not new_value.strip():
+                        console.print('No input provided.')
+                        continue
+                    if name == 'execute_shell_command':
+                        args['command'] = new_value
+                    elif name == 'write_file':
+                        args['content'] = new_value
+                    elif name == 'local_python_interpreter':
+                        args['code'] = new_value
+                    console.print('[dim]Executing modified...[/]')
+                    try:
+                        result = self.tools[name].invoke(args)
+                        console.print('[bold green]Done.[/]')
+                        return str(result)
+                    except Exception as e:
+                        return f'Tool Error: {e}'
 
 
 SHARED_GUARD = InteractiveToolGuard()
 
 
 class RecursiveToolAgent(Runnable):
-    def __init__(self, agent, schema: Type[BaseModel], tools: List[Any], work_dir: str = None, max_recursion_depth=20):
+    def __init__(self, agent, schema: Type[BaseModel], tools: List[Any], work_dir: str = None, max_recursion_depth=50):
         self.agent = agent
         self.schema = schema
         self.tools_map = {t.name: t for t in tools}
@@ -289,10 +311,10 @@ class RecursiveToolAgent(Runnable):
                 messages = list(input)
 
             for _ in range(self.max_recursion_depth):
-                res = self.model_with_tools.invoke(messages, config=config)
-                messages.append(res)
+                result = self.model_with_tools.invoke(messages, config=config)
+                messages.append(result)
 
-                if not res.tool_calls:
+                if not result.tool_calls:
                     try:
                         return self.agent.with_structured_output(self.schema).invoke(messages)
                     except:
@@ -301,8 +323,8 @@ class RecursiveToolAgent(Runnable):
                 outputs = []
                 is_finished = None
 
-                for call in res.tool_calls:
-                    name, args, cid = call['name'], call['args'], call['id']
+                for call in result.tool_calls:
+                    name, args, call_id = call['name'], call['args'], call['id']
 
                     if name == self.schema.__name__:
                         try:
@@ -311,8 +333,8 @@ class RecursiveToolAgent(Runnable):
                             return None
 
                     if name in self.tools_map:
-                        output = self.guard.invoke(name, args, cid)
-                        outputs.append(ToolMessage(content=str(output), tool_call_id=cid, name=name))
+                        output = self.guard.invoke(name, args, call_id)
+                        outputs.append(ToolMessage(content=str(output), tool_call_id=call_id, name=name))
 
                 if is_finished:
                     return is_finished
@@ -325,7 +347,7 @@ class RecursiveToolAgent(Runnable):
 
 
 class CodeAgentBuilder:
-    def __init__(self, model_id, tools=None, work_dir=None, max_recursion_depth=20, **kwargs):
+    def __init__(self, model_id, tools=None, work_dir=None, max_recursion_depth=50, **kwargs):
         self.model_id = model_id
         self.kwargs = kwargs
         self.tools = tools or []
