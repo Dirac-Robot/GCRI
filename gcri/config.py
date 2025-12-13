@@ -256,7 +256,7 @@ def local_qwen(config):
         )
 
 
-@scope.observe(default=True)
+@scope.observe()
 def local_llama(config):
     config.agents.endpoint_url = 'http://localhost:8000/v1'
 
