@@ -7,6 +7,8 @@ import uuid
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, List, Type
+
+from duckduckgo_search import DDGS
 from loguru import logger
 
 from ato.adict import ADict
@@ -132,6 +134,22 @@ def local_python_interpreter(code: str) -> str:
         return output if output.strip() else '(No output printed)'
     except Exception as e:
         return f'Error running python: {e}'
+
+
+@tool
+def search_web(query: str, max_results=5) -> str:
+    """Searches the web using DuckDuckGo."""
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+            if not results:
+                return 'No results found.'
+            formatted = []
+            for r in results:
+                formatted.append(f'Title: {r['title']}\nLink: {r['href']}\nSnippet: {r['body']}')
+            return '\n---\n'.join(formatted)
+    except Exception as e:
+        return f'Search Error: {e}'
 
 
 CLI_TOOLS = [execute_shell_command, read_file, write_file, local_python_interpreter]
@@ -377,11 +395,14 @@ class CodeAgentBuilder:
 def build_model(model_id, gcri_options=None, work_dir=None, **parameters):
     if gcri_options is not None:
         use_code_tools = gcri_options.get('use_code_tools', False)
+        use_web_search = gcri_options.get('use_web_search', False)
         max_recursion_depth = gcri_options.get('max_recursion_depth', 20)
     else:
         use_code_tools = False
+        use_web_search = False
         max_recursion_depth = 20
     tools = CLI_TOOLS if use_code_tools else []
+    tools += [search_web] if use_web_search else []
     return CodeAgentBuilder(
         model_id,
         tools=tools,
