@@ -13,9 +13,10 @@ def main(config):
     load_dotenv()
     worker = GCRI(config)
     logger.info("🤖 GCRI Single Worker Started.")
-    logger.info("   - Press [Ctrl+C] during input to EXIT.")
-    logger.info("   - Press [Ctrl+C] during task to ABORT task.")
-    logger.info("   - Type 'q' to quit.\n")
+    logger.info("- Press [Ctrl+C] during input to EXIT.")
+    logger.info("- Press [Ctrl+C] during task to ABORT task.")
+    logger.info("- Type 'q' to quit.\n")
+    result = None
     while True:
         try:
             logger.info('🧩 Write task directly or path to task is contained: ')
@@ -26,10 +27,16 @@ def main(config):
                 break
             if not command:
                 continue
-            if command.lower() in ('q', 'quit', 'exit'):
+            elif command.lower() in ('/q', '/quit', '/exit'):
                 logger.info('👋 Exiting GCRI Worker...')
                 break
-            if os.path.exists(command):
+            elif command.lower() == ('/r', '/retry'):
+                if result is None:
+                    logger.warning("⚠️ No previous state found in memory. Please run a task first.")
+                    continue
+                logger.info("🔄 Retrying with last state...")
+                task = result
+            elif os.path.exists(command):
                 with open(command) as f:
                     task = f.read()
             else:
