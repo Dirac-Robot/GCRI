@@ -20,7 +20,7 @@ from gcri.graphs.schemas import (
     ActiveConstraints
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
-from gcri.tools.cli import build_model, PROJECT_ROOT
+from gcri.tools.cli import build_model, PROJECT_ROOT, get_input
 
 
 class GCRI:
@@ -93,13 +93,6 @@ class GCRI:
         shutil.copytree(project_root, sandbox_dir, ignore=ignore_patterns, dirs_exist_ok=True)
         return str(sandbox_dir)
 
-    @classmethod
-    def _commit_sandbox(cls, sandbox_path):
-        logger.info("💾 Committing changes from sandbox to project root...")
-        project_root = os.getcwd()
-        shutil.copytree(sandbox_path, project_root, dirs_exist_ok=True)
-        logger.info("✅ Changes applied successfully.")
-
     @property
     def work_dir(self):
         return self._work_dir
@@ -116,42 +109,45 @@ class GCRI:
     def workflow(self):
         return self._workflow
 
-    @classmethod
-    def _smart_copy_tree(cls, src_path, dst_path, max_file_size=10):
-        src_path = Path(src_path)
-        dst_path = Path(dst_path)
-        ignore_patterns = {'.git', '__pycache__', '.idea', '.vscode', 'venv', 'env', 'node_modules', 'workspaces'}
-        for root, dirs, files in os.walk(src_path):
-            rel_path = Path(root).relative_to(src_path)
-            dst_dir = dst_path/rel_path
-            os.makedirs(dst_dir, exist_ok=True)
-            dirs[:] = [d for d in dirs if d not in ignore_patterns and not d.startswith('.')]
-            for file in files:
-                if file.startswith('.'):
-                    continue
-                if file.endswith('.pyc'):
-                    continue
-                src_file = Path(root)/file
-                dst_file = dst_dir/file
-                try:
-                    file_size = src_file.stat().st_size/2**20
-                    if file_size < max_file_size:
-                        shutil.copy2(src_file, dst_file)
-                    else:
-                        os.symlink(src_file.resolve(), dst_file)
-                except Exception as e:
-                    logger.warning(f"Skipped {src_file}: {e}")
+    def _smart_copy(self, src, dst, *, follow_symlinks=True):
+        limit_bytes = self.config.protocols.max_copy_size*1024*1024  # 10MB
+        try:
+            if os.path.islink(src):
+                link_to = os.readlink(src)
+                os.symlink(link_to, dst)
+            elif os.path.getsize(src) > limit_bytes:
+                os.symlink(os.path.abspath(src), dst)
+            else:
+                shutil.copy2(src, dst)
+        except Exception as e:
+            logger.warning(f'Smart copy failed for {src}: {e}')
 
     def map_branches(self, state: TaskState):
         num_branches = min(len(self.config.agents.branches), len(state.strategies))
         root_dir = os.path.join(self.work_dir, 'workspaces')
         os.makedirs(root_dir, exist_ok=True)
         sends = []
+        ignore = shutil.ignore_patterns(
+            'workspaces',
+            '.git',
+            '__pycache__',
+            '.idea',
+            'venv',
+            '*.pyc',
+            'node_modules'
+        )
         for index in range(num_branches):
             branch_workspace = os.path.join(root_dir, f'iter_{state.count}_branch_{index}')
             if os.path.exists(branch_workspace):
                 shutil.rmtree(branch_workspace)
-            self._smart_copy_tree(self.work_dir, branch_workspace, max_file_size=10)
+            os.makedirs(branch_workspace, exist_ok=True)
+            shutil.copytree(
+                self.work_dir,
+                branch_workspace,
+                ignore=ignore,
+                copy_function=self._smart_copy,  # <--- 여기가 포인트
+                dirs_exist_ok=True
+            )
             sends.append(
                 Send(
                     'branch_executor',
@@ -331,6 +327,29 @@ class GCRI:
             descriptions.append(f'- {code.value}')
         return '\n'.join(descriptions)
 
+    @classmethod
+    def _commit_winning_branch(cls, winning_branch_path, project_root):
+        logger.info(f'💾 Merging changes from winning branch: {winning_branch_path}')
+        ignore_patterns = {'.git', '__pycache__', 'venv', 'env', '.idea', 'workspaces'}
+        for root, dirs, files in os.walk(winning_branch_path):
+            dirs[:] = [d for d in dirs if d not in ignore_patterns]
+            rel_path = os.path.relpath(root, winning_branch_path)
+            target_dir = os.path.join(project_root, rel_path)
+            if not os.path.exists(target_dir):
+                os.makedirs(target_dir)
+            for file in files:
+                if file in ignore_patterns or file.endswith('.pyc'):
+                    continue
+                src_file = os.path.join(root, file)
+                dst_file = os.path.join(target_dir, file)
+                if os.path.islink(src_file):
+                    continue
+                try:
+                    shutil.copy2(src_file, dst_file)
+                except Exception as e:
+                    logger.error(f'Failed to copy {src_file}: {e}')
+        logger.info('✅ Merge completed successfully.')
+
     def decide(self, state: TaskState):
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
         file_contexts = []
@@ -363,10 +382,13 @@ class GCRI:
                 f'for {self.config.protocols.max_tries_per_agent} times.'
             )
         logger.info(f'Decision: {decision.decision}')
-        if not decision.decision:
+        if decision.decision:
+            logger.info(f'Selected Best Branch Index: {decision.best_branch_index}')
+        else:
             logger.info(f'Feedback: {decision.global_feedback}')
         return {
             'decision': decision.decision,
+            'best_branch_index': decision.best_branch_index,
             'final_output': decision.final_output,
             'global_feedback': decision.global_feedback,
             'branch_evaluations': decision.branch_evaluations
@@ -451,12 +473,22 @@ class GCRI:
                     logger.info(f'Result of iteration {index} saved to: {log_path}')
                     if result['decision']:
                         logger.info('Final result is successfully deduced.')
-                        logger.info(f'Task Completed in Sandbox: {sandbox_dir}')
-                        logger.info('Do you want to APPLY these changes to your actual project? (y/n)')
-                        if input().strip().lower() == 'y':
-                            self._commit_sandbox(sandbox_dir)
+                        logger.info(f'Task Completed. Check sandbox: {sandbox_dir}')
+                        best_branch_index = result.get('best_branch_index')
+                        if best_branch_index is None:
+                            logger.warning(
+                                'Decision is True but no branch index provided. Cannot commit automatically.'
+                            )
+                            break
+                        winning_branch_path = os.path.join(
+                            sandbox_dir, 'workspaces', f'iter_{index}_branch_{best_branch_index}'
+                        )
+                        logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index}')
+                        logger.info(f'📂 Location: {winning_branch_path}')
+                        if get_input('Apply this result to project root? (y/n): ').lower() == 'y':
+                            self._commit_winning_branch(winning_branch_path, PROJECT_ROOT)
                         else:
-                            logger.info('Changes discarded (remained in sandbox).')
+                            logger.info('Changes discarded.')
                         break
                     else:
                         memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])

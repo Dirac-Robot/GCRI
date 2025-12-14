@@ -31,6 +31,11 @@ AUTO_MODE_FILE = os.path.join(PROJECT_ROOT, '.gcri_auto_mode')
 logger.info(f'AUTO MODE FILE SET TO: {AUTO_MODE_FILE}')
 
 
+def get_input(message):
+    logger.info(message)
+    return sys.stdin.buffer.readline().decode('utf-8', errors='ignore').strip()
+
+
 def get_cwd():
     d = CWD_VAR.get()
     os.makedirs(d, exist_ok=True)
@@ -93,18 +98,15 @@ def read_file(filepath: str) -> str:
 
 
 @tool
-def write_file(file_path: str, content: str) -> str:
-    """Writes content to a file. Safely handles symlinks by unlinking first."""
+def write_file(filepath: str, content: str) -> str:
+    """Writes content to a file."""
     cwd = get_cwd()
-    target = os.path.join(cwd, file_path)
+    target = os.path.join(cwd, filepath)
     try:
-        os.makedirs(os.path.dirname(target) or '.', exist_ok=True)
-        if os.path.islink(target):
-            os.unlink(target)
-            logger.info(f'🔗 Unlinked symlink before writing: {file_path}')
+        os.makedirs(os.path.dirname(target) or PROJECT_ROOT, exist_ok=True)
         with open(target, 'w', encoding='utf-8') as f:
             f.write(content)
-        return f'Successfully wrote to "{file_path}" in workspace.'
+        return f'Successfully wrote to "{filepath}" in workspace.'
     except Exception as e:
         return f'Error: {e}'
 

@@ -57,6 +57,7 @@ class TaskState(BaseModel):
     task_strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
     strategies: List[str] = Field(default_factory=list)
     results: Annotated[List[HypothesisResult], operator.add] = Field(default_factory=list)
+    best_branch_index: Optional[int] = None
     aggregated_result: Optional[str] = None
     decision: Optional[bool] = None
     final_output: Optional[str] = None

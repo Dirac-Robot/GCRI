@@ -6,6 +6,7 @@ from loguru import logger
 
 from gcri.config import scope
 from gcri.graphs.planner import GCRIMetaPlanner
+from gcri.tools.cli import get_input
 
 
 @scope
@@ -19,9 +20,8 @@ def main(config):
     result = None
     while True:
         try:
-            logger.info('🧩 Write task directly or path to task is contained: ')
             try:
-                command = sys.stdin.buffer.readline().decode('utf-8', errors='ignore').strip()
+                command = get_input('🧩 Write task directly or path to task is contained: ')
             except KeyboardInterrupt:
                 logger.info('\n👋 Exiting GCRI Planner...')
                 break

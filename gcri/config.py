@@ -90,12 +90,13 @@ def default(config):
         memory=get_template_path('memory.txt'),
         active_memory=get_template_path('active_memory.txt'),
     )
-    config.plan.num_max_tasks = 3
-    config.max_iterations = 3
+    config.plan.num_max_tasks = 5
+    config.max_iterations = 5
     config.protocols = dict(
         accept_all=True,
         aggregate_targets=['strategy', 'hypothesis', 'counter_example', 'adjustment', 'counter_strength'],
-        max_tries_per_agent=3
+        max_tries_per_agent=3,
+        max_copy_size=10
     )
     config.log_dir = './gcri_logs'
 
