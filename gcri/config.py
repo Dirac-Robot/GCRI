@@ -53,7 +53,7 @@ def default(config):
                 gcri_options=dict(
                     use_code_tools=True,
                     use_web_search=True,
-                    max_recursion_depth=30
+                    max_recursion_depth=None
                 )
             ) for agent_name in AGENT_NAMES_IN_BRANCH
         } for _ in range(3)
@@ -124,7 +124,7 @@ def large_models(config):
                 gcri_options=dict(
                     use_code_tools=True,
                     use_web_search=True,
-                    max_recursion_depth=30
+                    max_recursion_depth=None
                 )
             ),
             reasoning=dict(
@@ -135,7 +135,7 @@ def large_models(config):
                 gcri_options=dict(
                     use_code_tools=True,
                     use_web_search=True,
-                    max_recursion_depth=30
+                    max_recursion_depth=None
                 )
             ),
             verification=dict(
@@ -146,7 +146,7 @@ def large_models(config):
                 gcri_options=dict(
                     use_code_tools=True,
                     use_web_search=True,
-                    max_recursion_depth=30
+                    max_recursion_depth=None
                 )
             )
         ) for _ in range(3)
@@ -165,7 +165,7 @@ def gpt_4_1_based(config):
                 gcri_options=dict(
                     use_code_tools=True,
                     use_web_search=True,
-                    max_recursion_depth=30
+                    max_recursion_depth=None
                 )
             ) for agent_name in AGENT_NAMES_IN_BRANCH
         } for _ in range(3)
@@ -221,7 +221,7 @@ def local_qwen(config):
                     gcri_options=dict(
                         use_code_tools=True,
                         use_web_search=True,
-                        max_recursion_depth=30
+                        max_recursion_depth=None
                     )
                 ) for agent_name in AGENT_NAMES_IN_BRANCH
             } for _ in range(3)
@@ -305,7 +305,7 @@ def local_llama(config):
                     gcri_options=dict(
                         use_code_tools=True,
                         use_web_search=True,
-                        max_recursion_depth=30
+                        max_recursion_depth=None
                     )
                 ) for agent_name in AGENT_NAMES_IN_BRANCH
             } for _ in range(3)

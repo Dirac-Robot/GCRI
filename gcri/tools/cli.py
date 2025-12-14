@@ -327,38 +327,37 @@ class RecursiveToolAgent(Runnable):
                 messages = [HumanMessage(content=str(input))]
             else:
                 messages = list(input)
-
-            for _ in range(self.max_recursion_depth):
+            recursion_count = 0
+            while True:
                 result = self.model_with_tools.invoke(messages, config=config)
                 messages.append(result)
-
                 if not result.tool_calls:
                     try:
                         return self.agent.with_structured_output(self.schema).invoke(messages)
                     except:
                         return None
-
                 outputs = []
                 is_finished = None
-
                 for call in result.tool_calls:
                     name, args, call_id = call['name'], call['args'], call['id']
-
                     if name == self.schema.__name__:
                         try:
                             return self.schema(**args)
                         except:
-                            return None
-
+                            return
                     if name in self.tools_map:
                         output = self.guard.invoke(name, args, call_id)
                         outputs.append(ToolMessage(content=str(output), tool_call_id=call_id, name=name))
-
                 if is_finished:
                     return is_finished
                 messages.extend(outputs)
-
-            raise ValueError('Max steps exceeded.')
+                recursion_count += 1
+                if self.max_recursion_depth is not None and recursion_count >= self.max_recursion_depth:
+                    break
+            raise ValueError(
+                f'Maximum recursion depth is {self.max_recursion_depth}, '
+                f'and it is exceeded while tool calling.'
+            )
         finally:
             if token:
                 CWD_VAR.reset(token)
@@ -396,11 +395,11 @@ def build_model(model_id, gcri_options=None, work_dir=None, **parameters):
     if gcri_options is not None:
         use_code_tools = gcri_options.get('use_code_tools', False)
         use_web_search = gcri_options.get('use_web_search', False)
-        max_recursion_depth = gcri_options.get('max_recursion_depth', 20)
+        max_recursion_depth = gcri_options.get('max_recursion_depth', None)
     else:
         use_code_tools = False
         use_web_search = False
-        max_recursion_depth = 20
+        max_recursion_depth = None
     tools = CLI_TOOLS if use_code_tools else []
     tools += [search_web] if use_web_search else []
     return CodeAgentBuilder(
