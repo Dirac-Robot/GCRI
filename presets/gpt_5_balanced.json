@@ -1,0 +1,123 @@
+{
+  "preset_name": "gpt_balanced",
+  "agents": {
+    "planner": {
+      "model_id": "gpt-5-mini",
+      "parameters": {
+        "max_tokens": 16384,
+        "temperature": 0.2
+      }
+    },
+    "compression": {
+      "model_id": "gpt-5-mini",
+      "parameters": {
+        "max_tokens": 8192,
+        "temperature": 0
+      }
+    },
+    "strategy_generator": {
+      "model_id": "gpt-5-mini",
+      "parameters": {
+        "max_tokens": 16384,
+        "temperature": 0.7
+      }
+    },
+    "branches": [
+      {
+        "hypothesis": {
+          "model_id": "gpt-5.2",
+          "parameters": {
+            "max_tokens": 25600,
+            "temperature": 0.2
+          },
+          "gcri_options": {
+            "use_code_tools": true,
+            "use_web_search": true,
+            "max_recursion_depth": null
+          }
+        },
+        "reasoning": {
+          "model_id": "gpt-5-mini",
+          "parameters": {
+            "max_tokens": 16384,
+            "temperature": 0.2
+          },
+          "gcri_options": {
+            "use_code_tools": true,
+            "use_web_search": true,
+            "max_recursion_depth": null
+          }
+        },
+        "verification": {
+          "model_id": "gpt-5.2",
+          "parameters": {
+            "max_tokens": 16384,
+            "temperature": 0
+          },
+          "gcri_options": {
+            "use_code_tools": true,
+            "use_web_search": true,
+            "max_recursion_depth": null
+          }
+        }
+      },
+      {
+        "hypothesis": {
+          "model_id": "gpt-5-mini",
+          "parameters": {
+            "max_tokens": 16384,
+            "temperature": 0.3
+          },
+          "gcri_options": {
+            "use_code_tools": true,
+            "use_web_search": true,
+            "max_recursion_depth": null
+          }
+        },
+        "reasoning": {
+          "model_id": "gpt-5-mini",
+          "parameters": {
+            "max_tokens": 12288,
+            "temperature": 0.2
+          },
+          "gcri_options": {
+            "use_code_tools": true,
+            "use_web_search": true,
+            "max_recursion_depth": null
+          }
+        },
+        "verification": {
+          "model_id": "gpt-5-mini",
+          "parameters": {
+            "max_tokens": 12288,
+            "temperature": 0
+          },
+          "gcri_options": {
+            "use_code_tools": true,
+            "use_web_search": true,
+            "max_recursion_depth": null
+          }
+        }
+      }
+    ],
+    "decision": {
+      "model_id": "gpt-5.2",
+      "parameters": {
+        "max_tokens": 16384,
+        "temperature": 0
+      },
+      "gcri_options": {
+        "use_code_tools": true,
+        "use_web_search": true,
+        "max_recursion_depth": null
+      }
+    },
+    "memory": {
+      "model_id": "gpt-5-mini",
+      "parameters": {
+        "max_tokens": 8192,
+        "temperature": 0
+      }
+    }
+  }
+}
