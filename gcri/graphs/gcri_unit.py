@@ -20,7 +20,7 @@ from gcri.graphs.schemas import (
     ActiveConstraints
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
-from gcri.tools.cli import build_model
+from gcri.tools.cli import build_model, PROJECT_ROOT
 
 
 class GCRI:
@@ -44,7 +44,7 @@ class GCRI:
             **strategy_generator_config.parameters
         ).with_structured_output(schema=Strategies)
         decision_config = config.agents.decision
-        self._work_dir = os.getcwd()
+        self._work_dir = PROJECT_ROOT
         decision_agent = build_model(
             decision_config.model_id,
             decision_config.get('gcri_options'),
@@ -390,6 +390,19 @@ class GCRI:
         feedback = ''
         memory = initial_memory if initial_memory is not None else StructuredMemory()
         result = None
+        if isinstance(task, dict):
+            logger.info('🔄 State object detected. Resuming from previous state in memory...')
+            try:
+                task_content = task.get('task', '')
+                if 'memory' in task:
+                    memory = TypeAdapter(StructuredMemory).validate_python(task['memory'])
+                feedback = task.get('feedback', '')
+                start_index = task.get('count', -1)+1
+                logger.info(f'Task: {task_content[:50]}...')
+                logger.info(f'Resuming loop from index: {start_index}')
+            except Exception as e:
+                logger.error(f'Failed to restore state from object: {e}')
+                raise ValueError('Invalid state object provided.')
         try:
             for index in range(self.config.max_iterations):
                 logger.info(f'Starting Iteration {index}...')
@@ -408,7 +421,6 @@ class GCRI:
                     with open(log_path, 'w', encoding='utf-8') as f:
                         json.dump(result, f, indent=4, ensure_ascii=False)
                     logger.info(f'Result of iteration {index} saved to: {log_path}')
-
                     if result['decision']:
                         logger.info('Final result is successfully deduced.')
                         logger.info(f'Task Completed in Sandbox: {sandbox_dir}')
@@ -417,19 +429,21 @@ class GCRI:
                             self._commit_sandbox(sandbox_dir)
                         else:
                             logger.info('Changes discarded (remained in sandbox).')
-                        return result
+                        break
                     else:
                         memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])
                         feedback = result['feedback']
                 except KeyboardInterrupt:
                     logger.warning(f'Iteration {index} interrupted by user. Stopping...')
                     raise
+                except Exception as e:
+                    logger.error(f'Iteration {index} error: {e}')
+            else:
+                logger.info('Final result is not deduced, but iteration count is over.')
         except KeyboardInterrupt:
             logger.warning('GCRI Task interrupted by user (Ctrl+C). Returning last state.')
             if result:
                 result['final_output'] = 'Task aborted by user.'
-                return result
-            return {'final_output': 'Task aborted by user before first iteration completion.'}
-
-        logger.info('Final result is not deduced, but iteration count is over.')
+            else:
+                result = {'final_output': 'Task aborted by user before first iteration completion.'}
         return result

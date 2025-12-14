@@ -25,8 +25,8 @@ from rich.syntax import Syntax
 from gcri.config import scope
 
 console = Console(force_terminal=True)
-CWD_VAR = ContextVar('cwd', default='.')
-PROJECT_ROOT = os.getcwd()
+PROJECT_ROOT = os.path.abspath(os.getcwd())
+CWD_VAR = ContextVar('cwd', default=PROJECT_ROOT)
 AUTO_MODE_FILE = os.path.join(PROJECT_ROOT, '.gcri_auto_mode')
 logger.info(f'AUTO MODE FILE SET TO: {AUTO_MODE_FILE}')
 

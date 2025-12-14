@@ -6,7 +6,7 @@ from typing import Literal, List, Optional
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END, START
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 
 from gcri.graphs.gcri_unit import GCRI
 from gcri.graphs.schemas import Plan, Compression
@@ -145,11 +145,21 @@ class GCRIMetaPlanner:
 
         return updated_state_dict
 
-    def __call__(self, goal):
-        logger.info(f'Starting Meta-Planner for Goal: {goal}')
-        final_state = self.workflow.invoke({'goal': goal})
-        if final_state['final_answer']:
-            logger.info('Goal Achieved.')
+    def __call__(self, goal_or_state):
+        if isinstance(goal_or_state, dict):
+            logger.info('🔄 Resuming Planner from in-memory state object...')
+            try:
+                state = TypeAdapter(GlobalState).validate_python(goal_or_state)
+                logger.info(f'Continuing from plan count: {state.plan_count}')
+            except Exception as e:
+                logger.error(f'Invalid state object: {e}')
+                return goal_or_state
         else:
-            logger.error('Planning failed: Max tasks exceeded or no solution found.')
-        return final_state
+            logger.info(f'Starting meta-planner for goal: {goal_or_state}')
+            state = GlobalState(goal=str(goal_or_state))
+        state = self.workflow.invoke(state)
+        if state['final_answer']:
+            logger.info('Goal achieved.')
+        else:
+            logger.error('Planning logic ended (failed or limit reached).')
+        return state
