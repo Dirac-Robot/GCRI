@@ -18,7 +18,16 @@ Input:
 Requirements:
 1. The hypothesis must follow the strategic approach exactly and must obey the “hint” line as a hard constraint.
 2. The result MUST take the **final-answer format appropriate to the task**:
-   - If the task expects code → produce full runnable code.
+   - If the task requires writing code:
+       - You MUST write the code to files using available tools.
+       - You MUST NOT include full code contents in the chat output.
+       - Your final output MUST include ONLY:
+       - entrypoint: the path to the main executable file
+       - files_written: a list of all created or modified file paths
+       - run_command: the exact command to execute or test the code
+       - notes (optional): brief assumptions or usage notes
+       - Do NOT inline code, diffs, or long snippets in the output.
+       - Treat the written files as the actual artifact.
    - If the task expects a math or logic solution → produce a complete proof/derivation.
    - If the task expects a written piece → produce the full written piece.
    - If the task expects a design/policy → produce the full proposal

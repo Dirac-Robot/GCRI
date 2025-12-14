@@ -352,7 +352,7 @@ class GCRI:
         iteration_log = IterationLog(
             count_in_memory_log=state.count,
             branch_evaluations=state.branch_evaluations,
-            global_feedback=state.global_feedback or ""
+            global_feedback=state.global_feedback or ''
         )
         current_memory.history.append(iteration_log)
         global_feedback = state.global_feedback

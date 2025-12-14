@@ -40,6 +40,11 @@ Constraints:
 - Do NOT rewrite or merge hypotheses yourself.
 - Do NOT invent new counter-examples. Use the provided one.
 - A "Strong" counter_example not fixed MUST lead to rejection.
+- If the final_output refers to code artifacts:
+  - You MUST verify that all referenced file paths actually exist.
+  - You MUST NOT include full code contents in the final_output.
+  - The final_output should reference code ONLY via file paths and run commands.
+  Do NOT re-inject code contents, logs, or large execution outputs into aggregated_result or final_output.
 
 Input:
 - task: {task}

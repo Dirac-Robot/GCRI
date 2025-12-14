@@ -35,3 +35,13 @@ Output format:
 Constraints:
 - Do NOT mention task/strategy/hypothesis/feedback/agents/loops.
 - Do NOT final-polish beyond what is needed for verifiability.
+- If the task requires writing code:
+   - You MUST write the code to files using available tools.
+   - You MUST NOT include full code contents in the chat output.
+   - Your final output MUST include ONLY:
+   - entrypoint: the path to the main executable file
+   - files_written: a list of all created or modified file paths
+   - run_command: the exact command to execute or test the code
+   - notes (optional): brief assumptions or usage notes
+   - Do NOT inline code, diffs, or long snippets in the output.
+   - Treat the written files as the actual artifact.

@@ -97,7 +97,6 @@ def default(config):
         aggregate_targets=['strategy', 'hypothesis', 'counter_example', 'adjustment', 'counter_strength'],
         max_tries_per_agent=3
     )
-    config.use_deep_feedback = False
     config.log_dir = './gcri_logs'
 
 
