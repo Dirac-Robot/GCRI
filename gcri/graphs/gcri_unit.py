@@ -116,6 +116,32 @@ class GCRI:
     def workflow(self):
         return self._workflow
 
+    @classmethod
+    def _smart_copy_tree(cls, src_path, dst_path, max_file_size=10):
+        src_path = Path(src_path)
+        dst_path = Path(dst_path)
+        ignore_patterns = {'.git', '__pycache__', '.idea', '.vscode', 'venv', 'env', 'node_modules', 'workspaces'}
+        for root, dirs, files in os.walk(src_path):
+            rel_path = Path(root).relative_to(src_path)
+            dst_dir = dst_path/rel_path
+            os.makedirs(dst_dir, exist_ok=True)
+            dirs[:] = [d for d in dirs if d not in ignore_patterns and not d.startswith('.')]
+            for file in files:
+                if file.startswith('.'):
+                    continue
+                if file.endswith('.pyc'):
+                    continue
+                src_file = Path(root)/file
+                dst_file = dst_dir/file
+                try:
+                    file_size = src_file.stat().st_size/2**20
+                    if file_size < max_file_size:
+                        shutil.copy2(src_file, dst_file)
+                    else:
+                        os.symlink(src_file.resolve(), dst_file)
+                except Exception as e:
+                    logger.warning(f"Skipped {src_file}: {e}")
+
     def map_branches(self, state: TaskState):
         num_branches = min(len(self.config.agents.branches), len(state.strategies))
         root_dir = os.path.join(self.work_dir, 'workspaces')
@@ -123,7 +149,9 @@ class GCRI:
         sends = []
         for index in range(num_branches):
             branch_workspace = os.path.join(root_dir, f'iter_{state.count}_branch_{index}')
-            os.makedirs(branch_workspace, exist_ok=True)
+            if os.path.exists(branch_workspace):
+                shutil.rmtree(branch_workspace)
+            self._smart_copy_tree(self.work_dir, branch_workspace, max_file_size=10)
             sends.append(
                 Send(
                     'branch_executor',

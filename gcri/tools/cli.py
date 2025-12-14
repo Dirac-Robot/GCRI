@@ -93,15 +93,18 @@ def read_file(filepath: str) -> str:
 
 
 @tool
-def write_file(filepath: str, content: str) -> str:
-    """Writes content to a file."""
+def write_file(file_path: str, content: str) -> str:
+    """Writes content to a file. Safely handles symlinks by unlinking first."""
     cwd = get_cwd()
-    target = os.path.join(cwd, filepath)
+    target = os.path.join(cwd, file_path)
     try:
         os.makedirs(os.path.dirname(target) or '.', exist_ok=True)
+        if os.path.islink(target):
+            os.unlink(target)
+            logger.info(f'🔗 Unlinked symlink before writing: {file_path}')
         with open(target, 'w', encoding='utf-8') as f:
             f.write(content)
-        return f'Successfully wrote to "{filepath}" in workspace.'
+        return f'Successfully wrote to "{file_path}" in workspace.'
     except Exception as e:
         return f'Error: {e}'
 
