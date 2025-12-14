@@ -256,7 +256,7 @@ class InteractiveToolGuard:
                 console.print(str(args))
             is_sensitive, reason = self._is_sensitive(name, args)
             is_safe_sandbox_op = self._is_inside_sandbox(args)
-            if (self.auto_mode or is_safe_sandbox_op) and not is_sensitive:
+            if is_safe_sandbox_op or (self.auto_mode and not is_sensitive):
                 console.print(f'[bold green]⚡ Auto-Executing inside Sandbox (Task {task_id})[/]')
                 try:
                     res = self.tools[name].invoke(args)
