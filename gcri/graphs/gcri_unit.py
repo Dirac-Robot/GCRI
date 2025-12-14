@@ -1,6 +1,8 @@
 import json
 import os
+import shutil
 from datetime import datetime
+from pathlib import Path
 
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
@@ -77,6 +79,27 @@ class GCRI:
         log_dir = os.path.join(config.log_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
         self._log_dir = log_dir
 
+    @classmethod
+    def _setup_sandbox(cls):
+        project_root = Path(os.getcwd())
+        sandbox_root = project_root/'.gcri'/'sandboxes'
+        sandbox_root.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        sandbox_dir = sandbox_root/f"run_{timestamp}"
+        logger.info(f"📦 Creating sandbox at: {sandbox_dir}")
+        ignore_patterns = shutil.ignore_patterns(
+            '.git', '__pycache__', 'venv', 'env', 'node_modules', '.idea', '.vscode', '.gcri', '*.pyc'
+        )
+        shutil.copytree(project_root, sandbox_dir, ignore=ignore_patterns, dirs_exist_ok=True)
+        return str(sandbox_dir)
+
+    @classmethod
+    def _commit_sandbox(cls, sandbox_path):
+        logger.info("💾 Committing changes from sandbox to project root...")
+        project_root = os.getcwd()
+        shutil.copytree(sandbox_path, project_root, dirs_exist_ok=True)
+        logger.info("✅ Changes applied successfully.")
+
     @property
     def work_dir(self):
         return self._work_dir
@@ -95,7 +118,7 @@ class GCRI:
 
     def map_branches(self, state: TaskState):
         num_branches = min(len(self.config.agents.branches), len(state.strategies))
-        root_dir = os.path.join(self.log_dir, 'workspaces')
+        root_dir = os.path.join(self.work_dir, 'workspaces')
         os.makedirs(root_dir, exist_ok=True)
         sends = []
         for index in range(num_branches):
@@ -284,7 +307,7 @@ class GCRI:
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
         file_contexts = []
         num_results = len(state.results)
-        workspace_root = os.path.join(self.log_dir, 'workspaces')
+        workspace_root = os.path.join(self.work_dir, 'workspaces')
         for i in range(num_results):
             branch_dir = os.path.join(workspace_root, f'iter_{state.count}_branch_{i}')
             if os.path.exists(branch_dir):
@@ -361,6 +384,9 @@ class GCRI:
         }
 
     def __call__(self, task, initial_memory=None):
+        sandbox_dir = self._setup_sandbox()
+        self._work_dir = sandbox_dir
+        self.decision_agent.work_dir = sandbox_dir
         feedback = ''
         memory = initial_memory if initial_memory is not None else StructuredMemory()
         result = None
@@ -385,6 +411,12 @@ class GCRI:
 
                     if result['decision']:
                         logger.info('Final result is successfully deduced.')
+                        logger.info(f'Task Completed in Sandbox: {sandbox_dir}')
+                        logger.info('Do you want to APPLY these changes to your actual project? (y/n)')
+                        if input().strip().lower() == 'y':
+                            self._commit_sandbox(sandbox_dir)
+                        else:
+                            logger.info('Changes discarded (remained in sandbox).')
                         return result
                     else:
                         memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])

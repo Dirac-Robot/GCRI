@@ -9,7 +9,8 @@
     "kill",
     "shutdown",
     "reboot",
-    "wget"
+    "wget",
+    "curl"
   ],
   "sensitive_paths": [
     ".env",
@@ -26,6 +27,7 @@
     "subprocess",
     "shutil",
     "socket",
+    "requests",
     "urllib",
     "base64"
   ],

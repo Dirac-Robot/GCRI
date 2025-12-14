@@ -185,6 +185,22 @@ class InteractiveToolGuard:
                     os.remove(AUTO_MODE_FILE)
                 except OSError:
                     pass
+    @classmethod
+    def _is_inside_sandbox(cls, args):
+        current_cwd = Path(get_cwd()).resolve()
+        target_path = None
+        if 'filepath' in args:
+            target_path = Path(args['filepath'])
+        elif 'cwd' in args:
+            target_path = Path(args['cwd'])
+        if target_path:
+            try:
+                if not target_path.is_absolute():
+                    target_path = (current_cwd/target_path).resolve()
+                return current_cwd in target_path.parents or current_cwd == target_path
+            except:
+                return False
+        return True
 
     def _analyze_python_code(self, code: str):
         try:
@@ -232,30 +248,26 @@ class InteractiveToolGuard:
             console.print(
                 Panel(f'Agent Request: [bold cyan]{name}[/]\nWorkspace: [dim]{current_ws}[/]', border_style='blue')
             )
-
             if 'code' in args:
                 console.print(Syntax(args['code'], 'python', theme='monokai', line_numbers=True))
             elif 'command' in args:
                 console.print(Syntax(args['command'], 'bash', theme='monokai'))
             else:
                 console.print(str(args))
-
             is_sensitive, reason = self._is_sensitive(name, args)
-
-            if self.auto_mode and not is_sensitive:
-                console.print(f'[bold green]⚡ Auto-Executing Task {task_id} (Safe)[/]')
+            is_safe_sandbox_op = self._is_inside_sandbox(args)
+            if (self.auto_mode or is_safe_sandbox_op) and not is_sensitive:
+                console.print(f'[bold green]⚡ Auto-Executing inside Sandbox (Task {task_id})[/]')
                 try:
-                    result = self.tools[name].invoke(args)
-                    console.print(f'[dim]Result: {str(result)[:100]}...[/]')
-                    return str(result)
+                    res = self.tools[name].invoke(args)
+                    console.print(f'[dim]Result: {str(res)[:100]}...[/]')
+                    return str(res)
                 except Exception as e:
                     return f'Tool Error: {e}'
-
             while True:
                 console.print('[bold yellow]>> (y)es / (a)lways / (n)o / (e)dit : [/]', end='')
                 sys.stdout.flush()
                 choice = input().strip().lower()
-
                 if choice == 'y':
                     console.print(f'[dim]Executing Task {task_id}...[/]')
                     try:
