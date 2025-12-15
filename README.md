@@ -13,6 +13,58 @@ This is not just an LLM wrapper—it's an agent-centric architecture where multi
 
 ---
 
+## GCRI as a Thinking Unit
+
+### Single Unit = Intelligent Resource Controller
+
+A single GCRI loop functions as **one unified thinking unit** that can replace traditional LLM calls. Unlike simple prompt-response patterns, each GCRI unit:
+
+- **Controls Resources:** Manages its own workspace, file system, and execution environment
+- **Self-Verifies:** Internal red team challenges every solution before returning results
+- **Learns from Failures:** Builds constraints that prevent repeated mistakes
+- **Returns Verified Output:** Only outputs that survive internal criticism are released
+
+Think of it as a **"super-LLM"** where a single function call triggers an entire competitive ecosystem of agents working toward the same goal.
+
+### Composability: GCRI Units as Building Blocks
+
+Because GCRI is a complete graph with clear input/output contracts, it can be **composed** into larger systems:
+
+```mermaid
+graph LR
+    Goal[Complex Goal] --> MP[Meta-Planner]
+
+    MP -->|Task 1: Design| U1[GCRI Unit 1]
+    U1 -->|Verified Design| MP
+
+    MP -->|Task 2: Implement| U2[GCRI Unit 2]
+    U2 -->|Verified Code| MP
+
+    MP -->|Task 3: Test| U3[GCRI Unit 3]
+    U3 -->|Verified Tests| MP
+
+    MP -->|Task 4: Deploy| U4[GCRI Unit 4]
+    U4 -->|Verified Deployment| MP
+
+    MP --> Final[Final Solution]
+
+    style U1 fill:#e1f5ff
+    style U2 fill:#e1f5ff
+    style U3 fill:#e1f5ff
+    style U4 fill:#e1f5ff
+    style MP fill:#fff3cd
+```
+
+The **Meta-Planner** (`gcri plan`) decomposes complex goals into sequential tasks and delegates each to a fresh GCRI unit. Each unit:
+1. Receives context from previous units
+2. Executes its specialized task with full agent competition
+3. Returns verified results to the planner
+4. Passes accumulated knowledge to the next unit
+
+This enables **modular reasoning** where each step is internally verified before proceeding.
+
+---
+
 ## Architecture: The Coordinators vs. The Workers
 
 ### The Coordinators (Central Command - Main Graph)
