@@ -25,9 +25,8 @@ from rich.syntax import Syntax
 from gcri.config import scope
 
 console = Console(force_terminal=True)
-PROJECT_ROOT = os.path.abspath(os.getcwd())
-CWD_VAR = ContextVar('cwd', default=PROJECT_ROOT)
-AUTO_MODE_FILE = os.path.join(PROJECT_ROOT, '.gcri_auto_mode')
+CWD_VAR = ContextVar('cwd', default=scope.config.project_dir)
+AUTO_MODE_FILE = os.path.join(scope.config.project_dir, '.gcri_auto_mode')
 logger.info(f'AUTO MODE FILE SET TO: {AUTO_MODE_FILE}')
 
 
@@ -37,15 +36,15 @@ def get_input(message):
 
 
 def get_cwd():
-    d = CWD_VAR.get()
-    os.makedirs(d, exist_ok=True)
-    return d
+    dir_path = CWD_VAR.get()
+    os.makedirs(dir_path, exist_ok=True)
+    return dir_path
 
 
 def get_environment_with_python_path(cwd):
     environment = os.environ.copy()
     prev_python_path = environment.get('PYTHONPATH', '')
-    next_python_path = f'{cwd}{os.pathsep}{PROJECT_ROOT}{os.pathsep}{prev_python_path}'
+    next_python_path = f'{cwd}{os.pathsep}{scope.config.project_dir}{os.pathsep}{prev_python_path}'
     environment['PYTHONPATH'] = next_python_path
     environment['PYTHONUNBUFFERED'] = '1'
     return environment
@@ -84,12 +83,12 @@ def execute_shell_command(command: str) -> str:
 
 
 @tool
-def read_file(filepath: str) -> str:
+def read_file(file_path: str) -> str:
     """Reads the content of a file."""
     cwd = get_cwd()
-    target = os.path.join(cwd, filepath)
+    target = os.path.join(cwd, file_path)
     if not os.path.exists(target):
-        return f'Error: File "{filepath}" not found in {cwd}.'
+        return f'Error: File "{file_path}" not found in {cwd}.'
     try:
         with open(target, 'r', encoding='utf-8') as f:
             return f.read()
@@ -98,15 +97,17 @@ def read_file(filepath: str) -> str:
 
 
 @tool
-def write_file(filepath: str, content: str) -> str:
+def write_file(file_path: str, content: str) -> str:
     """Writes content to a file."""
     cwd = get_cwd()
-    target = os.path.join(cwd, filepath)
+    target = os.path.join(cwd, file_path)
     try:
-        os.makedirs(os.path.dirname(target) or PROJECT_ROOT, exist_ok=True)
+        os.makedirs(os.path.dirname(target) or scope.config.project_dir, exist_ok=True)
+        if os.path.islink(target):
+            os.unlink(target)
         with open(target, 'w', encoding='utf-8') as f:
             f.write(content)
-        return f'Successfully wrote to "{filepath}" in workspace.'
+        return f'Successfully wrote to "{file_path}" in workspace.'
     except Exception as e:
         return f'Error: {e}'
 

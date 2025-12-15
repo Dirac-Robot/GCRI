@@ -98,7 +98,8 @@ def default(config):
         max_tries_per_agent=3,
         max_copy_size=10
     )
-    config.log_dir = './gcri_logs'
+    config.project_dir = os.path.abspath(os.getcwd())
+    config.run_dir = os.path.join(config.project_dir, '.gcri')
 
 
 @scope.observe(default=True, lazy=True)

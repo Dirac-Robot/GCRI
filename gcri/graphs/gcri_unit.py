@@ -9,6 +9,7 @@ from langgraph.graph import StateGraph
 from langgraph.types import Send
 from loguru import logger
 from pydantic import TypeAdapter
+from copy import deepcopy as dcp
 
 from gcri.graphs.schemas import (
     Verification,
@@ -20,7 +21,7 @@ from gcri.graphs.schemas import (
     ActiveConstraints
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
-from gcri.tools.cli import build_model, PROJECT_ROOT, get_input
+from gcri.tools.cli import build_model, get_input
 
 
 class GCRI:
@@ -44,7 +45,11 @@ class GCRI:
             **strategy_generator_config.parameters
         ).with_structured_output(schema=Strategies)
         decision_config = config.agents.decision
-        self._work_dir = PROJECT_ROOT
+        self._project_dir = config.project_dir
+        self._run_dir = config.run_dir
+        os.makedirs(self.run_dir, exist_ok=True)
+        self._work_dir = None
+        self._log_dir = None
         decision_agent = build_model(
             decision_config.model_id,
             decision_config.get('gcri_options'),
@@ -76,22 +81,22 @@ class GCRI:
         graph.add_edge('update_memory', END)
         self._graph = graph
         self._workflow = graph.compile()
-        log_dir = os.path.join(config.log_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
-        self._log_dir = log_dir
 
-    @classmethod
-    def _setup_sandbox(cls):
-        project_root = Path(os.getcwd())
-        sandbox_root = project_root/'.gcri'/'sandboxes'
-        sandbox_root.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        sandbox_dir = sandbox_root/f"run_{timestamp}"
-        logger.info(f"📦 Creating sandbox at: {sandbox_dir}")
-        ignore_patterns = shutil.ignore_patterns(
-            '.git', '__pycache__', 'venv', 'env', 'node_modules', '.idea', '.vscode', '.gcri', '*.pyc'
-        )
-        shutil.copytree(project_root, sandbox_dir, ignore=ignore_patterns, dirs_exist_ok=True)
-        return str(sandbox_dir)
+    def _setup_sandbox(self):
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        self._work_dir = os.path.join(self.run_dir, f'run-{timestamp}')
+        self._log_dir = os.path.join(self.work_dir, f'logs')
+        logger.info(f"📦 Creating workspaces in sandbox at: {self.work_dir}")
+        os.makedirs(self.work_dir, exist_ok=True)
+        os.makedirs(self.log_dir, exist_ok=True)
+
+    @property
+    def project_dir(self):
+        return self._project_dir
+
+    @property
+    def run_dir(self):
+        return self._run_dir
 
     @property
     def work_dir(self):
@@ -128,13 +133,15 @@ class GCRI:
         os.makedirs(root_dir, exist_ok=True)
         sends = []
         ignore = shutil.ignore_patterns(
-            'workspaces',
             '.git',
             '__pycache__',
-            '.idea',
             'venv',
-            '*.pyc',
-            'node_modules'
+            'env',
+            'node_modules',
+            '.idea',
+            '.vscode',
+            '.gcri',
+            '*.pyc'
         )
         for index in range(num_branches):
             branch_workspace = os.path.join(root_dir, f'iter_{state.count}_branch_{index}')
@@ -142,10 +149,10 @@ class GCRI:
                 shutil.rmtree(branch_workspace)
             os.makedirs(branch_workspace, exist_ok=True)
             shutil.copytree(
-                self.work_dir,
+                self.project_dir,
                 branch_workspace,
                 ignore=ignore,
-                copy_function=self._smart_copy,  # <--- 여기가 포인트
+                copy_function=self._smart_copy,
                 dirs_exist_ok=True
             )
             sends.append(
@@ -433,10 +440,9 @@ class GCRI:
             'feedback': integrated_feedback
         }
 
-    def __call__(self, task, initial_memory=None):
-        sandbox_dir = self._setup_sandbox()
-        self._work_dir = sandbox_dir
-        self.decision_agent.work_dir = sandbox_dir
+    def __call__(self, task, initial_memory=None, auto_commit=False):
+        self._setup_sandbox()
+        self.decision_agent.work_dir = self.work_dir
         feedback = ''
         memory = initial_memory if initial_memory is not None else StructuredMemory()
         result = None
@@ -473,7 +479,7 @@ class GCRI:
                     logger.info(f'Result of iteration {index} saved to: {log_path}')
                     if result['decision']:
                         logger.info('Final result is successfully deduced.')
-                        logger.info(f'Task Completed. Check sandbox: {sandbox_dir}')
+                        logger.info(f'Task Completed. Check sandbox: {self.work_dir}')
                         best_branch_index = result.get('best_branch_index')
                         if best_branch_index is None:
                             logger.warning(
@@ -481,12 +487,12 @@ class GCRI:
                             )
                             break
                         winning_branch_path = os.path.join(
-                            sandbox_dir, 'workspaces', f'iter_{index}_branch_{best_branch_index}'
+                            self.work_dir, 'workspaces', f'iter_{index}_branch_{best_branch_index}'
                         )
                         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index}')
                         logger.info(f'📂 Location: {winning_branch_path}')
-                        if get_input('Apply this result to project root? (y/n): ').lower() == 'y':
-                            self._commit_winning_branch(winning_branch_path, PROJECT_ROOT)
+                        if auto_commit or get_input('Apply this result to project root? (y/n): ').lower() == 'y':
+                            self._commit_winning_branch(winning_branch_path, self.project_dir)
                         else:
                             logger.info('Changes discarded.')
                         break

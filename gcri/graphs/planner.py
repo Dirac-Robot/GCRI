@@ -7,6 +7,7 @@ from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END, START
 from loguru import logger
 from pydantic import BaseModel, Field, TypeAdapter
+from copy import deepcopy as dcp
 
 from gcri.graphs.gcri_unit import GCRI
 from gcri.graphs.schemas import Plan, Compression
@@ -26,9 +27,15 @@ class GlobalState(BaseModel):
 class GCRIMetaPlanner:
     def __init__(self, config):
         self.config = config
-        self.gcri_unit = GCRI(config)
-        self.log_dir = os.path.join(config.log_dir, f'planner_{datetime.now().strftime("%Y%m%d-%H%M%S")}')
-        os.makedirs(self.log_dir, exist_ok=True)
+        gcri_config = dcp(config)
+        self.work_dir = os.path.join(
+            config.project_dir,
+            '.gcri',
+            f'planner-{datetime.now().strftime("%Y%m%d-%H%M%S")}'
+        )
+        gcri_config.run_dir = self.work_dir
+        self.gcri_unit = GCRI(gcri_config)
+        os.makedirs(self.work_dir, exist_ok=True)
         planner_config = config.agents.planner
         self._planner_agent = init_chat_model(
             planner_config.model_id,
@@ -63,7 +70,7 @@ class GCRIMetaPlanner:
 
     def _save_state(self, state: GlobalState):
         filename = f'log_plan_{state.plan_count:02d}.json'
-        path = os.path.join(self.log_dir, filename)
+        path = os.path.join(self.work_dir, filename)
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(state.model_dump(mode='json'), f, indent=4, ensure_ascii=False)
         logger.info(f'Result of plan {state.plan_count} saved to: {path}')
@@ -105,7 +112,7 @@ class GCRIMetaPlanner:
     def exec_single_gcri_task(self, state: GlobalState):
         current_task = state.current_task
         logger.info(f'Planning Iter #{state.plan_count} | Delegating to GCRI Unit: {current_task}')
-        gcri_result = self.gcri_unit(task=current_task, initial_memory=state.memory)
+        gcri_result = self.gcri_unit(task=current_task, initial_memory=state.memory, auto_commit=True)
         output = gcri_result.get('final_output', 'Task failed to produce a conclusive final output.')
         updated_memory = gcri_result.get('memory', state.memory)
         return {'mid_result': output, 'memory': updated_memory}
