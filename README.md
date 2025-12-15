@@ -1,8 +1,100 @@
 # GCRI
 **Generalized Counterexample-Reinforced Intelligence**
 
+<p align="center">
+  <img src="assets/gcri.jpeg" alt="GCRI Mascot" width="400"/>
+</p>
+
 ## Overview
-GCRI is a lightweight LLM-based pipeline that executes multi-branch hypothesis-verification loops (generate → refine → verify → decide). It explores single tasks through multiple strategies to derive final decisions, or uses a meta-planner to execute multiple tasks sequentially.
+
+GCRI (Generative Code Reasoning Intelligence) Single Unit is a **Hierarchical Multi-Agent System** where central coordination and field execution are separated. Rather than simply generating code, strategy formulation-execution-verification-evaluation stages are performed by different specialized agents, and this process occurs in isolated sandbox environments.
+
+This is not just an LLM wrapper—it's an agent-centric architecture where multiple teams compete, critique, and converge to produce verified solutions.
+
+---
+
+## Architecture: The Coordinators vs. The Workers
+
+### The Coordinators (Central Command - Main Graph)
+
+The management layer that sets system direction, audits results, and makes final decisions.
+
+| Agent | Role | Key Responsibilities | Input/Output |
+|:---|:---|:---|:---|
+| **Strategy Generator**<br>(Strategy Planner) | **Tactician** | • **Multi-angle Approach:** Analyzes user requirements to establish N different solution strategies, not a single solution.<br>• **Diversity Assurance:** Sets different initial directions so that all branches don't write identical code. | • **Input:** Task, Memory (Constraints)<br>• **Output:** `Strategies` (List of strings) |
+| **Decision Maker**<br>(Final Authority) | **Judge** | • **Gatekeeping:** Coldly evaluates the validity of results from each execution branch.<br>• **Winner Selection:** If the task is accomplished, identifies the 'winning branch' that wrote the most perfect code.<br>• **Deployment Approval:** Sends approval signal for the system to merge (commit) sandbox results to the original project. | • **Input:** Aggregated Results, File Contexts<br>• **Output:** `Decision` (Bool), `best_branch_index` |
+| **Memory Manager**<br>(Memory Keeper) | **Analyst** | • **Failure Analysis:** Analyzes errors and logical flaws from failed loops.<br>• **Constraint Generation:** Converts "what should never be done next time" into `ActiveConstraints` to continuously update agent intelligence. | • **Input:** Global Feedback<br>• **Output:** `ActiveConstraints` (Rules) |
+
+### The Workers (Field Execution Team - Branch Subgraph)
+
+The practitioner layer that performs actual coding and verification within isolated sandboxes created per branch.
+
+| Agent | Role | Key Responsibilities | Input/Output |
+|:---|:---|:---|:---|
+| **Hypothesis Generator**<br>(Code Generator) | **Coder** | • **Execution:** Implements assigned strategy into actual working code.<br>• **File Manipulation:** Directly accesses sandbox filesystem to create (`write_file`) or modify files. | • **Input:** Task, Strategy<br>• **Output:** `Hypothesis` (Code Artifacts) |
+| **Reasoning Agent**<br>(Refiner) | **Reviewer** | • **Self-Critique:** Doesn't immediately execute coder's hypothesis, but first reviews for logical leaps or missing requirements.<br>• **Refinement:** Reinforces logic and refines (concretizes) hypothesis. | • **Input:** Hypothesis<br>• **Output:** `Reasoning` (Refined Logic) |
+| **Verification Agent**<br>(Verifier) | **Red Team** | • **Vulnerability Search:** Finds logical flaws or execution errors in written code.<br>• **Counter-Example Generation:** Presents specific 'counter-examples' that can break the code to test solution robustness.<br>• **Survival Judgment:** If code cannot withstand this counter-example, that branch fails. | • **Input:** Refined Hypothesis<br>• **Output:** `Verification` (Counter-Example) |
+
+---
+
+## Collaboration Flow
+
+```mermaid
+graph TB
+    User[User Task] --> SG[Strategy Generator]
+    SG -->|Strategy A| B1[Branch A Sandbox]
+    SG -->|Strategy B| B2[Branch B Sandbox]
+    SG -->|Strategy C| B3[Branch C Sandbox]
+
+    B1 --> H1[Hypothesis Generator A]
+    H1 --> R1[Reasoning Agent A]
+    R1 --> V1[Verification Agent A]
+
+    B2 --> H2[Hypothesis Generator B]
+    H2 --> R2[Reasoning Agent B]
+    R2 --> V2[Verification Agent B]
+
+    B3 --> H3[Hypothesis Generator C]
+    H3 --> R3[Reasoning Agent C]
+    R3 --> V3[Verification Agent C]
+
+    V1 --> DM[Decision Maker]
+    V2 --> DM
+    V3 --> DM
+
+    DM -->|Winner: B| Deploy[Deploy to Project Root]
+    DM -->|All Failed| MM[Memory Manager]
+    MM --> SG
+```
+
+### Process Steps
+
+1. **Command:** `Strategy Generator` analyzes the problem and issues 3 infiltration routes (strategies): A, B, C.
+2. **Isolation:** System builds 3 mutually invisible sandboxes (workspaces) for teams A, B, C. (Smart Copy & Link)
+3. **Execution:**
+   - Each team's `Hypothesis Generator` writes code.
+   - `Reasoning Agent` refines it.
+   - `Verification Agent` attacks and attempts to break it.
+4. **Report:** Survival status and results from each team are reported to `Decision Maker`.
+5. **Verdict & Merge:** If `Decision Maker` judges Team B's results as best, the system reflects only Team B's sandbox contents to the original server.
+
+---
+
+## Core Architecture Values
+
+### 🎯 Clear R&R Separation
+Planners (Strategy), executors (Hypothesis), verifiers (Verification), and evaluators (Decision) are separated, minimizing bias and hallucination.
+
+### 🏆 Competitive Evolution
+Multiple agent teams compete in parallel to find optimal solutions.
+
+### 🔒 Safe Execution
+All execution occurs in environments isolated from the main system, with only verified results exported.
+
+### 🧠 Continuous Learning
+Failed attempts are converted into constraints, making the system smarter with each iteration.
+
+---
 
 ## Quick Start
 
@@ -13,34 +105,39 @@ GCRI is a lightweight LLM-based pipeline that executes multi-branch hypothesis-v
 
 ### Installation
 
-1) Create virtual environment and install dependencies
-
 ```bash
+# Clone repository
+git clone https://github.com/yourusername/GCRI.git
+cd GCRI
+
+# Create virtual environment
 python -m venv .venv
 source .venv/bin/activate   # macOS / Linux
-.\.venv\Scripts\activate    # Windows
+# .\.venv\Scripts\activate  # Windows
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-2) Basic execution (interactive)
+### Basic Usage
 
-**GCRI Unit Worker** (process one task with multiple strategies)
-
-```bash
-python -m gcri.entry
-# or
-python -c "from gcri.entry import cli_entry; cli_entry()"
-```
-
-Enter the task you want to analyze (or file path containing the task) at the terminal prompt.
-
-**Meta-Planner Mode** (planning → delegate to multiple GCRI tasks)
+**Single Task Mode** - Execute one task with multiple competing strategies:
 
 ```bash
-python -m gcri.entry plan
+gcri
 ```
 
-3) Programmatic usage (simple example)
+Enter your task at the prompt. GCRI will spawn multiple agent teams that compete to solve it.
+
+**Planner Mode** - Break down complex goals into sequential tasks:
+
+```bash
+gcri plan
+```
+
+The meta-planner will decompose your goal into subtasks and execute them systematically.
+
+### Programmatic Usage
 
 ```python
 from gcri.config import scope
@@ -48,143 +145,218 @@ from gcri.graphs.gcri_unit import GCRI
 
 config = scope()  # returns config object
 unit = GCRI(config)
-result = unit('Enter your goal as a sentence')
+result = unit('Write a Python script to analyze CSV files')
 print(result['final_output'])
 ```
 
-## Core Use Case
-- **Goal**: Explore complex problems (e.g., design/policy/debugging tasks) through multiple reasoning strategies in parallel to obtain reliable conclusions.
-- **Execution**: `python -m gcri.entry` → input task → internally creates multiple branches (default 3) that cycle through hypothesis generation → refinement → verification → decision.
+---
 
-## Architecture Overview
+## Configuration Presets
 
-### Main Components
+GCRI includes pre-configured presets for different use cases and model providers:
 
-#### gcri.config
-- Scope-based configuration management and template/agent parameter declaration.
+### Available Presets
+- **Balanced:** General-purpose configuration with good speed/quality tradeoff
+- **Coding Specialist:** Optimized for code generation tasks
+- **Deep Research:** Maximum thoroughness for complex problems
+- **Lightweight:** Fast execution with minimal resource usage
 
-#### gcri.entry
-- CLI entry point. Executes unit worker or meta-planner depending on 'plan' argument.
+### Supported Providers
+- **GPT-5 series** (`gpt_5_*.json`)
+- **Claude series** (`claude_*.json`)
+- **Gemini series** (`gemini_*.json`)
+- **Mixed providers** (`mixed_*.json`)
+- **Local models** (`local_*.json`)
 
-#### gcri.main / gcri.main_planner
-- Handle unit GCRI execution loop and meta-planner execution loop respectively.
+Load a preset:
+```python
+from gcri.config import scope
 
-#### gcri.graphs.gcri_unit.GCRI
-- Core workflow: strategy sampling → branch-wise hypothesis generation/refinement/verification → aggregation → decision → memory update.
-- Main public method: `__call__(task, initial_memory=None)` → iteration result (decision/output/memory)
+# Load GPT-5 balanced preset
+config = scope(preset='presets/gpt_5_balanced.json')
+unit = GCRI(config)
+```
 
-#### gcri.graphs.planner.GCRIMetaPlanner
-- High-level planner: receives goal, decomposes into multiple single tasks, and delegates each task to GCRI unit.
-- Public method: `__call__(goal)` → final state (or failure log)
+---
 
-#### gcri.tools.cli
-- Local tool wrappers: `execute_shell_command`, `read_file`, `write_file`, `local_python_interpreter`
-- `build_model(model_id, gcri_options=None, **parameters)`: internally returns CodeAgentBuilder to create agent (LLM) objects.
+## Project Structure
 
-#### Templates (gcri/templates/*.txt)
-- Prompt templates used at each stage (hypothesis, reasoning, verification, strategy_generator, decision, memory, etc.)
+```
+GCRI/
+├── assets/                 # Project assets (logos, images)
+├── gcri/
+│   ├── config.py          # Configuration management
+│   ├── entry.py           # CLI entry point
+│   ├── graphs/
+│   │   ├── gcri_unit.py   # Core GCRI workflow
+│   │   ├── planner.py     # Meta-planner for multi-task
+│   │   ├── schemas.py     # Pydantic data models
+│   │   └── states.py      # Workflow state definitions
+│   ├── templates/         # Prompt templates
+│   │   ├── strategy_generator.txt
+│   │   ├── hypothesis.txt
+│   │   ├── reasoning.txt
+│   │   ├── verification.txt
+│   │   ├── decision.txt
+│   │   └── memory.txt
+│   └── tools/
+│       └── cli.py         # Local execution tools
+├── presets/               # Pre-configured model setups
+└── README.md
+```
 
-### Data/Schemas
-- **gcri.graphs.schemas**: Defines agent outputs (hypothesis/verification/decision/plan/compression, etc.) using Pydantic models.
-- **gcri.graphs.states**: Represents workflow states (Iteration, Memory, TaskState, etc.) with Pydantic.
+---
 
-## Public API Surface (Summary)
+## Advanced Features
 
-### Classes / Functions
+### Workspace Isolation
+Each branch executes in its own isolated workspace directory:
+- Pattern: `logs/{timestamp}/workspaces/iter_{N}_branch_{M}/`
+- Files created by agents are scoped to their workspace
+- Decision agent can inspect and verify outputs before deployment
 
-#### gcri.graphs.gcri_unit.GCRI
-- Usage: `GCRI(config)(task, initial_memory=None)`
-- Returns: dict containing keys like 'decision', 'final_output', 'memory', etc.
+### File Verification
+Decision agent performs mandatory audits:
+- Checks if claimed files actually exist
+- Executes code to verify it runs without errors
+- Only deploys verified results to project root
 
-#### gcri.graphs.planner.GCRIMetaPlanner
-- Usage: `GCRIMetaPlanner(config)(goal)`
-- Returns: dict containing 'final_answer' or planner logs.
+### Memory System
+- **Active Constraints:** Rules extracted from failures
+- **Iteration History:** Complete log of all attempts
+- **Feedback Loop:** Failed strategies inform future iterations
 
-#### gcri.tools.cli.build_model(model_id, gcri_options=None, **parameters)
-- LLM agent builder. Allows local tool access based on `gcri_options.use_code_tools`.
+---
 
-#### gcri.tools.cli Tools
-- `execute_shell_command` / `read_file` / `write_file` / `local_python_interpreter`
-- Auxiliary execution tools in local environment (execution controlled via InteractiveToolGuard).
+## Public API Reference
 
-#### gcri.entry.cli_entry()
-- CLI script entry point (recommended for use as entry).
+### Core Classes
 
-### Templates/Configuration
-- Templates are core to project operation (in prompt form). Default path: `gcri/templates/*.txt`.
-- Configuration can be changed via Scope in `gcri/config.py`. Adjust model ID, parameters, number of branches, etc.
+#### `gcri.graphs.gcri_unit.GCRI`
+Main workflow executor.
 
-## Auto-Documentation Guidelines
+```python
+GCRI(config)(task: str, initial_memory: StructuredMemory = None) -> dict
+```
 
-### Recommended Automated Tools (Python code basis)
+Returns:
+- `decision`: Boolean indicating if task was completed
+- `final_output`: Solution text (if decision=True)
+- `memory`: Updated memory state
+- `results`: Detailed branch results
 
-**Sphinx + autodoc** (recommended)
-1. Install: `pip install sphinx sphinx-autodoc-typehints`
-2. Initialize: `sphinx-quickstart docs -q`
-3. conf.py: `extensions=['sphinx.ext.autodoc','sphinx.ext.napoleon','sphinx_autodoc_typehints']`
-4. autodoc example: in docs/index.rst, `.. automodule:: gcri.graphs.gcri_unit`
-5. Build: `sphinx-build -b html docs/ docs/_build/html`
+#### `gcri.graphs.planner.GCRIMetaPlanner`
+Multi-task planner.
 
-**Alternative**: pdoc or mkdocstrings (Markdown-oriented) can be used.
+```python
+GCRIMetaPlanner(config)(goal: str) -> dict
+```
 
-### If Auto-Documentation is Not Possible (or for Quick Deployment)
-- Keep the "Public API Surface" section in README up-to-date.
-- Include usage examples and input/output examples for each major class (GCRI, GCRIMetaPlanner, build_model).
-- TODO: Create `gcri/README_API.md` with function signatures and simple examples.
+#### `gcri.tools.cli.build_model`
+LLM agent builder with optional tool access.
 
-## Testing, Build, Contributing
+```python
+build_model(
+    model_id: str,
+    gcri_options: dict = None,
+    work_dir: str = None,
+    **parameters
+) -> CodeAgentBuilder
+```
 
-### Testing
-- Currently pytest-related output files (pytest_output.txt) exist in project root, but no separate test suite is visible.
-- Recommended: Add pytest-based test directory `tests/` and run
+### CLI Tools
+- `execute_shell_command(command: str)`: Execute shell commands in workspace
+- `read_file(filepath: str)`: Read files from workspace
+- `write_file(filepath: str, content: str)`: Write files to workspace
+- `local_python_interpreter(code: str)`: Execute Python code
 
+All tools operate within isolated workspace contexts and include interactive safety guards.
+
+---
+
+## Testing & Development
+
+### Running Tests
 ```bash
 pip install pytest
 pytest -q
 ```
 
 ### Static Analysis
-- Recommended: flake8 / pylint. Example:
-
 ```bash
 pip install pylint
 pylint gcri
 ```
 
-### Build
-- For pure Python package distribution, pyproject.toml is available. Use poetry or pip build for packaging/distribution.
+### Code Style
+```bash
+pip install black isort
+black gcri/
+isort gcri/
+```
 
-### Contribution Guide (Simple)
-- Fork → feature branch → PR
-- Code style: black + isort recommended
-- Commit messages: clearly state purpose of changes
-- When adding new templates/model configurations, don't forget to update templates directory and config
+---
 
-### License
-- Currently no LICENSE file in root. If you want open source release, add appropriate license such as MIT/Apache-2.0.
+## Troubleshooting
 
-## Troubleshooting (FAQ)
+### Agent initialization failure
+- Check if required authentication keys exist in `.env`
+- Verify model ID and parameters in `gcri/config.py` are correct
 
-### 1) Agent initialization failure (LLM model related)
-- Check if required authentication keys exist in .env.
-- Verify model ID and parameters in gcri/config.py are correct.
+### Template file not found
+- Check `config.templates` path
+- Relative paths depend on working directory
 
-### 2) Template file not found
-- Check config.templates path. Since relative paths are specified, path may differ depending on working directory.
+### Tool execution stops at terminal
+- Local tools require user confirmation via `InteractiveToolGuard`
+- Enable auto-mode or set `gcri_options.use_code_tools=False`
 
-### 3) Tool execution stops at terminal — InteractiveToolGuard prompt
-- Local tools (execute_shell_command, etc.) require user confirmation before execution via interactive guard. If you want automatic execution, modify auto_mode logic inside InteractiveToolGuard, or disable tool usage (`gcri_options.use_code_tools=False`).
+### Logs/output not saved
+- Check write permissions for `config.log_dir`
+- Verify path exists and is writable
 
-### 4) Logs/output not saved
-- Default log directory is determined by `config.log_dir` in gcri/config.py. Check write permissions and path existence.
+---
 
-## Documentation TODO (Recommended)
-- Add simple comments (input field descriptions) to each template (gcri/templates/*.txt).
-- Document gcri/tools/cli InteractiveToolGuard behavior.
-- Create README_API.md: Add examples and sample JSON return values for each function/class/module.
+## Contributing
 
-## Final Notes
-This project combines LLM (conversational models) with a workflow engine (langgraph) to test and decide multiple reasoning paths in parallel and iteratively. Template (prompt) design determines quality, so template modification and config tuning are essential in actual use.
+We welcome contributions! Please follow these guidelines:
 
-## Contact
-Repository maintainers or code contributors should add contact information/issue templates through README.
+1. **Fork & Branch:** Create a feature branch from `main`
+2. **Code Style:** Use `black` and `isort` for formatting
+3. **Commit Messages:** Clearly state purpose of changes
+4. **Tests:** Add tests for new features
+5. **Documentation:** Update relevant docs and templates
+
+### Adding New Presets
+1. Create JSON file in `presets/` directory
+2. Follow existing preset structure
+3. Document model requirements and use cases
+
+---
+
+## License
+
+This project is currently without a license file. If you want to open source this project, please add an appropriate license such as MIT or Apache-2.0.
+
+---
+
+## Contact & Support
+
+- **Issues:** [GitHub Issues](https://github.com/yourusername/GCRI/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/yourusername/GCRI/discussions)
+
+---
+
+## Acknowledgments
+
+Built with:
+- [LangGraph](https://github.com/langchain-ai/langgraph) - Workflow orchestration
+- [LangChain](https://github.com/langchain-ai/langchain) - LLM integration
+- [Pydantic](https://github.com/pydantic/pydantic) - Data validation
+- [Rich](https://github.com/Textualize/rich) - Terminal formatting
+
+---
+
+<p align="center">
+  <strong>GCRI: Where Multiple Minds Converge to Code</strong>
+</p>
