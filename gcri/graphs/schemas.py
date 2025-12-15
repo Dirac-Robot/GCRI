@@ -63,6 +63,7 @@ class BranchAnalysis(BaseModel):
 
 class Decision(BaseModel):
     decision: bool = Field(..., description='Final approval decision (True if at least one is perfect)')
+    best_branch_index: Optional[int] = None
     final_output: Optional[str] = Field(None, description='The final adopted perfect answer')
     global_feedback: Optional[str] = Field(
         None,
