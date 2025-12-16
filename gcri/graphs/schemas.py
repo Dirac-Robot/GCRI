@@ -26,8 +26,30 @@ class ActiveConstraints(BaseModel):
     )
 
 
+from typing import List, Literal
+from pydantic import BaseModel, Field
+
+
+class Strategy(BaseModel):
+    name: str = Field(..., description='A short, descriptive name for this strategy.')
+    description: str = Field(..., description='Detailed explanation of the reasoning path and methodology.')
+    feedback_reflection: str = Field(
+        ...,
+        description='Summary of past failures and how this strategy specifically '
+                    'addresses them (modifies reasoning path).'
+    )
+    hints: List[str] = Field(
+        ...,
+        description='Explicit directives/hints for the Hypothesis Agent. Must be implementable.'
+    )
+
+
 class Strategies(BaseModel):
-    strategies: List[str]
+    strictness: Literal['strict', 'moderate', 'creative'] = Field(
+        ...,
+        description="The strictness level inferred from the task. Must be applied to all strategies."
+    )
+    strategies: List[Strategy] = Field(..., description="List of generated strategies.")
 
 
 class Hypothesis(BaseModel):

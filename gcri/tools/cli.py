@@ -265,9 +265,9 @@ class InteractiveToolGuard:
             if is_safe_sandbox_op or (self.auto_mode and not is_sensitive):
                 console.print(f'[bold green]⚡ Auto-Executing inside Sandbox (Task {task_id})[/]')
                 try:
-                    res = self.tools[name].invoke(args)
-                    console.print(f'[dim]Result: {str(res)[:100]}...[/]')
-                    return str(res)
+                    result = self.tools[name].invoke(args)
+                    console.print(f'[dim]Result: {str(result)[:100]}...[/]')
+                    return str(result)
                 except Exception as e:
                     return f'Tool Error: {e}'
             while True:
