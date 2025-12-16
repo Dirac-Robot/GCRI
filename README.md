@@ -160,7 +160,7 @@ print(result['final_output'])
 
 ## Configuration Presets
 
-GCRI includes pre-configured presets for different use cases and model providers:
+GCRI provides pre-configured presets in the `presets/` directory for convenience. These are ready-to-use configurations for different use cases and model providers.
 
 ### Available Presets
 - **Balanced:** General-purpose configuration with good speed/quality tradeoff
@@ -175,13 +175,19 @@ GCRI includes pre-configured presets for different use cases and model providers
 - **Mixed providers** (`mixed_*.json`)
 - **Local models** (`local_*.json`)
 
-Load a preset:
-```python
-from gcri.config import scope
+### Using a Preset
 
-# Load GPT-5 balanced preset
-config = scope(preset='presets/gpt_5_balanced.json')
-unit = GCRI(config)
+Use the `custom_config_path` parameter when running GCRI:
+
+```bash
+# Single task mode with preset
+gcri custom_config_path=presets/gpt_5_balanced.json
+
+# Planner mode with preset
+gcri plan custom_config_path=presets/claude_deep_research.json
+
+# Use your own custom configuration
+gcri custom_config_path=/path/to/your/custom_config.json
 ```
 
 ---
