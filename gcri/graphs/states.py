@@ -54,8 +54,11 @@ class HypothesisResult(BaseModel):
 class TaskState(BaseModel):
     count: int = 0
     task: str
-    task_strictness: Literal['strict', 'moderate', 'creative']
-    strategies: List[Strategy]
+    task_strictness: Literal['strict', 'moderate', 'creative'] = Field(
+        ...,
+        description='The strictness level inferred from the task. Must be applied to all strategies.'
+    )
+    strategies: List[Strategy] = Field(..., description='List of generated strategies.')
     results: Annotated[List[HypothesisResult], operator.add] = Field(default_factory=list)
     best_branch_index: Optional[int] = None
     aggregated_result: Optional[str] = None
