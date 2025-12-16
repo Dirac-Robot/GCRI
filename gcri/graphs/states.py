@@ -3,7 +3,7 @@ from typing import List, Annotated, Optional, Literal
 
 from pydantic import BaseModel, Field
 
-from gcri.graphs.schemas import BranchAnalysis, RefutationStatus
+from gcri.graphs.schemas import BranchAnalysis, RefutationStatus, Strategy
 
 
 class IterationLog(BaseModel):
@@ -54,8 +54,8 @@ class HypothesisResult(BaseModel):
 class TaskState(BaseModel):
     count: int = 0
     task: str
-    task_strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
-    strategies: List[str] = Field(default_factory=list)
+    task_strictness: Literal['strict', 'moderate', 'creative']
+    strategies: List[Strategy]
     results: Annotated[List[HypothesisResult], operator.add] = Field(default_factory=list)
     best_branch_index: Optional[int] = None
     aggregated_result: Optional[str] = None

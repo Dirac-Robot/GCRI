@@ -47,9 +47,9 @@ class Strategy(BaseModel):
 class Strategies(BaseModel):
     strictness: Literal['strict', 'moderate', 'creative'] = Field(
         ...,
-        description="The strictness level inferred from the task. Must be applied to all strategies."
+        description='The strictness level inferred from the task. Must be applied to all strategies.'
     )
-    strategies: List[Strategy] = Field(..., description="List of generated strategies.")
+    strategies: List[Strategy] = Field(..., description='List of generated strategies.')
 
 
 class Hypothesis(BaseModel):

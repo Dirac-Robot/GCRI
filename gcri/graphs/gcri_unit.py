@@ -200,7 +200,7 @@ class GCRI:
             )
         for index, strategy in enumerate(strategies.strategies):
             logger.info(f'Iter #{state.count+1} | Sampled strategy #{index}: {strategy}')
-        return dict(strategies=strategies.strategies)
+        return dict(task_strictness=strategies.strictness, strategies=strategies.strategies)
 
     def sample_hypothesis(self, state: BranchState):
         logger.info(f'Iter #{state.count_in_branch+1} | Request sampling hypothesis for strategy #{state.index}...')
