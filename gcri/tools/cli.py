@@ -142,8 +142,8 @@ def local_python_interpreter(code: str) -> str:
         )
         try:
             os.remove(target)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f'Unknown error is occurred during removing temporary file {target}: {e}')
         output = result.stdout+result.stderr
         if result.returncode != 0:
             return f'Execution failed (Exit {result.returncode}):\n{output}'
@@ -178,7 +178,8 @@ class InteractiveToolGuard:
         self.tools = {t.name: t for t in CLI_TOOLS}
         try:
             self._black_and_white_lists = _get_black_and_white_lists()
-        except:
+        except Exception as e:
+            logger.error(f'Cannot load black and white lists: {e}')
             self._black_and_white_lists = {
                 'sensitive_commands': [],
                 'sensitive_paths': [],
@@ -201,6 +202,7 @@ class InteractiveToolGuard:
                     os.remove(GlobalVariables.AUTO_MODE_FILE)
                 except OSError:
                     pass
+
     @classmethod
     def _is_inside_sandbox(cls, args):
         current_cwd = Path(get_cwd()).resolve()
@@ -214,7 +216,8 @@ class InteractiveToolGuard:
                 if not target_path.is_absolute():
                     target_path = (current_cwd/target_path).resolve()
                 return current_cwd in target_path.parents or current_cwd == target_path
-            except:
+            except Exception as e:
+                logger.error(f'Cannot find target path: {e}')
                 return False
         return True
 
@@ -236,8 +239,8 @@ class InteractiveToolGuard:
                         return True, 'Using file "open()" function'
         except SyntaxError:
             return True, 'Syntax Error'
-        except:
-            return True, 'Complex code detected'
+        except Exception as e:
+            return True, f'Complex code detected: {e}'
         return False, None
 
     def _is_sensitive(self, name, args):
@@ -362,7 +365,8 @@ class RecursiveToolAgent(Runnable):
                 if not result.tool_calls:
                     try:
                         return self.agent.with_structured_output(self.schema).invoke(messages)
-                    except:
+                    except Exception as e:
+                        logger.error(f'Unknown error is occurred during invoking: {e}')
                         return None
                 outputs = []
                 is_finished = None
@@ -371,7 +375,8 @@ class RecursiveToolAgent(Runnable):
                     if name == self.schema.__name__:
                         try:
                             return self.schema(**args)
-                        except:
+                        except Exception as e:
+                            logger.error(f'Unknown error is occurred during building schema for tool-calling: {e}')
                             return
                     if name in self.tools_map:
                         output = self.guard.invoke(name, args, call_id)
