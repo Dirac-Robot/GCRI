@@ -8,15 +8,14 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, List, Type
 
-from duckduckgo_search import DDGS
-from loguru import logger
-
 from ato.adict import ADict
+from duckduckgo_search import DDGS
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.runnables.utils import Input
 from langchain_core.tools import tool
+from loguru import logger
 from pydantic import BaseModel
 from rich.console import Console
 from rich.panel import Panel
@@ -25,9 +24,20 @@ from rich.syntax import Syntax
 from gcri.config import scope
 
 console = Console(force_terminal=True)
-CWD_VAR = ContextVar('cwd', default=scope.config.project_dir)
-AUTO_MODE_FILE = os.path.join(scope.config.project_dir, '.gcri_auto_mode')
-logger.info(f'AUTO MODE FILE SET TO: {AUTO_MODE_FILE}')
+
+
+class GlobalVariables:
+    CWD_VAR = None
+    AUTO_MODE_FILE = None
+
+
+@scope
+def set_global_variables(config):
+    GlobalVariables.CWD_VAR = ContextVar('cwd', default=scope.config.project_dir)
+    GlobalVariables.AUTO_MODE_FILE = os.path.join(config.project_dir, '.gcri_auto_mode')
+
+
+set_global_variables()
 
 
 def get_input(message):
@@ -36,7 +46,7 @@ def get_input(message):
 
 
 def get_cwd():
-    dir_path = CWD_VAR.get()
+    dir_path = GlobalVariables.CWD_VAR.get()
     os.makedirs(dir_path, exist_ok=True)
     return dir_path
 
@@ -178,17 +188,17 @@ class InteractiveToolGuard:
 
     @property
     def auto_mode(self):
-        return os.path.exists(AUTO_MODE_FILE)
+        return os.path.exists(GlobalVariables.AUTO_MODE_FILE)
 
     @auto_mode.setter
     def auto_mode(self, value):
         if value:
-            with open(AUTO_MODE_FILE, 'a'):
-                os.utime(AUTO_MODE_FILE, None)
+            with open(GlobalVariables.AUTO_MODE_FILE, 'a'):
+                os.utime(GlobalVariables.AUTO_MODE_FILE, None)
         else:
-            if os.path.exists(AUTO_MODE_FILE):
+            if os.path.exists(GlobalVariables.AUTO_MODE_FILE):
                 try:
-                    os.remove(AUTO_MODE_FILE)
+                    os.remove(GlobalVariables.AUTO_MODE_FILE)
                 except OSError:
                     pass
     @classmethod
@@ -250,7 +260,7 @@ class InteractiveToolGuard:
 
     def invoke(self, name, args, task_id):
         with self._io_lock:
-            current_ws = CWD_VAR.get()
+            current_ws = GlobalVariables.CWD_VAR.get()
             console.print(
                 Panel(f'Agent Request: [bold cyan]{name}[/]\nWorkspace: [dim]{current_ws}[/]', border_style='blue')
             )
@@ -337,7 +347,7 @@ class RecursiveToolAgent(Runnable):
     def invoke(self, input: Input, config: RunnableConfig | None = None, **kwargs: Any) -> Any:
         token = None
         if self.work_dir:
-            token = CWD_VAR.set(self.work_dir)
+            token = GlobalVariables.CWD_VAR.set(self.work_dir)
         try:
             if isinstance(input, str):
                 messages = [HumanMessage(content=input)]
@@ -378,7 +388,7 @@ class RecursiveToolAgent(Runnable):
             )
         finally:
             if token:
-                CWD_VAR.reset(token)
+                GlobalVariables.CWD_VAR.reset(token)
 
 
 class CodeAgentBuilder:

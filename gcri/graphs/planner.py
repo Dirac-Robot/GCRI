@@ -1,5 +1,6 @@
 import json
 import os
+from copy import deepcopy as dcp
 from datetime import datetime
 from typing import Literal, List, Optional
 
@@ -7,7 +8,6 @@ from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END, START
 from loguru import logger
 from pydantic import BaseModel, Field, TypeAdapter
-from copy import deepcopy as dcp
 
 from gcri.graphs.gcri_unit import GCRI
 from gcri.graphs.schemas import Plan, Compression
