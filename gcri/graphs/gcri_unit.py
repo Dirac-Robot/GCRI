@@ -170,15 +170,15 @@ class GCRI:
         return sends
 
     def aggregate(self, state: TaskState):
-        aggregated_results = [
-            {
-                key: getattr(result, key, '')
-                for key in self.config.protocols.aggregate_targets
-            }
-            for result in state.results
-            if result.counter_strength != 'strong' or self.config.protocols.accept_all
-        ]
-        return {'aggregated_result': json.dumps(aggregated_results, indent=4, ensure_ascii=False)}
+        aggregated_results = []
+        targets = self.config.protocols.aggregate_targets
+        for result in state.results:
+            if result.counter_strength == 'strong' and not self.config.protocols.accept_all:
+                continue
+            result = result.model_dump(mode='json')
+            converted_result = {key: result.get(key) for key in targets}
+            aggregated_results.append(converted_result)
+        return {'aggregated_result': aggregated_results}
 
     def sample_strategies(self, state: TaskState):
         logger.info(f'Iter #{state.count+1} | Request generating strategies...')
@@ -371,9 +371,13 @@ class GCRI:
         template_path = self.config.templates.decision
         with open(template_path, 'r') as f:
             template = f.read()
+        if state.aggregated_result:
+            aggregated_result = json.dumps(state.aggregated_result, indent=4, ensure_ascii=False)
+        else:
+            aggregated_result = None
         template = template.format(
             task=state.task,
-            aggregated_result=state.aggregated_result,
+            aggregated_result=aggregated_result,
             file_contexts=file_contexts,
             failure_category_list=self._get_failure_category_description()
         )
