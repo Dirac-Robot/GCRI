@@ -410,15 +410,13 @@ class CodeAgentBuilder:
         return self._agent
 
     def with_structured_output(self, schema: Type[BaseModel]):
-        if self.tools:
-            return RecursiveToolAgent(
-                self.agent,
-                schema,
-                tools=self.tools,
-                work_dir=self.work_dir,
-                max_recursion_depth=self.max_recursion_depth
-            )
-        return self.agent.with_structured_output(schema)
+        return RecursiveToolAgent(
+            self.agent,
+            schema,
+            tools=self.tools,
+            work_dir=self.work_dir,
+            max_recursion_depth=self.max_recursion_depth
+        )
 
     def invoke(self, *args, **kwargs):
         return self.agent.invoke(*args, **kwargs)
