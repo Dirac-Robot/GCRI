@@ -121,7 +121,7 @@ def apply_custom_config(config):
             logger.warning(f'Fallback to default config...')
 
 
-@scope.observe()
+@scope.observe(lazy=True)
 def no_web_search(config):
     for agent_name, agent_info in config.agents.items():
         if agent_name == 'branches':
@@ -138,7 +138,7 @@ def no_web_search(config):
                 )
 
 
-@scope.observe()
+@scope.observe(lazy=True)
 def no_code_tools(config):
     for agent_name, agent_info in config.agents.items():
         if agent_name == 'branches':
