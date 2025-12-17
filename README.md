@@ -31,7 +31,7 @@ Think of it as a **"super-LLM"** where a single function call triggers an entire
 Because GCRI is a complete graph with clear input/output contracts, it can be **composed** into larger systems:
 
 <p align="center">
-  <img src="assets/GCRI-Orchestrator.jpeg" alt="GCRI Orchestrator - Meta-Planner composing multiple GCRI units" width="800"/>
+  <img src="assets/GCRI-with-Orchestrator.png" alt="GCRI Orchestrator - Meta-Planner composing multiple GCRI units" width="800"/>
 </p>
 
 The **Meta-Planner** (`gcri plan`) decomposes complex goals into sequential tasks and delegates each to a fresh GCRI unit. Each unit:
@@ -71,7 +71,7 @@ The practitioner layer that performs actual coding and verification within isola
 ## Collaboration Flow
 
 <p align="center">
-  <img src="assets/GCRI-Single.jpeg" alt="GCRI Single Unit - Multi-branch collaboration workflow" width="800"/>
+  <img src="assets/GCRI-Single.png" alt="GCRI Single Unit - Multi-branch collaboration workflow" width="800"/>
 </p>
 
 ### Process Steps
