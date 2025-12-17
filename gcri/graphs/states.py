@@ -77,7 +77,7 @@ class BranchState(BaseModel):
     task_in_branch: str
     count_in_branch: int = 0
     strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
-    strategy: str
+    strategy: Strategy
     index: int
     hypothesis: Optional[str] = None
     reasoning: Optional[str] = None
