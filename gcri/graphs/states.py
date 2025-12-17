@@ -42,7 +42,7 @@ class StructuredMemory(BaseModel):
 
 class HypothesisResult(BaseModel):
     index: int
-    strategy: str
+    strategy: Strategy
     hypothesis: str
     reasoning: str
     counter_reasoning: str
