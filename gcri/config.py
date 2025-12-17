@@ -114,6 +114,21 @@ def apply_custom_config(config):
 
 
 @scope.observe()
+def no_tools(config):
+    for agent_name, agent_info in config.agents.items():
+        if agent_name == 'branches':
+            for branch_info in agent_info.items():
+                for branch_agent_name, branch_agent_info in branch_info.items():
+                    branch_agent_info.gcri_options.update(
+                        use_code_tools=False
+                    )
+        else:
+            agent_info.gcri_options.update(
+                use_code_tools=False,
+            )
+
+
+@scope.observe()
 def large_models(config):
     config.agents.branches = [
         dict(
