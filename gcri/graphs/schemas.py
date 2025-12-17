@@ -94,7 +94,7 @@ class DecisionProtoType(BaseModel):
     branch_evaluations: List[BranchAnalysis] = Field(..., description='Detailed evaluation list for each branch')
 
 
-class Plan(BaseModel):
+class PlanProtoType(BaseModel):
     thought: str = Field(description='Reasoning for the current analysis and plan formulation')
     next_task: Optional[str] = Field(description='Specific single task to be performed next (None if finished)')
     final_answer: Optional[Any] = Field(description='Final answer if the goal is achieved (None if in progress)')
@@ -109,12 +109,23 @@ class Compression(BaseModel):
     discard_reason: str = Field(description='Brief reason why certain details were compressed or discarded.')
 
 
-def create_decision_schema(decision_schema):
+def create_decision_schema(schema):
     return create_model(
-        'CustomDecision',
+        'Decision',
         __base__=DecisionProtoType,
         final_output=(
-            Optional[decision_schema],
+            Optional[schema],
             Field(None, description='The final structured answer matching the required schema.')
+        )
+    )
+
+
+def create_planner_schema(schema):
+    return create_model(
+        'Plan',
+        __base__=PlanProtoType,
+        final_output=(
+            Optional[schema],
+            Field(None, description='Final answer matching the required schema. Fill ONLY when is_finished is True.')
         )
     )

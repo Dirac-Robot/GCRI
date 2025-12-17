@@ -2,21 +2,22 @@ import json
 import os
 from copy import deepcopy as dcp
 from datetime import datetime
-from typing import Literal, List, Optional
+from typing import Literal
 
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END, START
 from loguru import logger
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import TypeAdapter
 
 from gcri.graphs.gcri_unit import GCRI
-from gcri.graphs.schemas import Plan, Compression
+from gcri.graphs.schemas import PlanProtoType, Compression, create_planner_schema
 from gcri.graphs.states import StructuredMemory, GlobalState
 
 
 class GCRIMetaPlanner:
-    def __init__(self, config):
+    def __init__(self, config, schema=None):
         self.config = config
+        self.schema = schema
         gcri_config = dcp(config)
         self.work_dir = os.path.join(
             config.project_dir,
@@ -24,14 +25,17 @@ class GCRIMetaPlanner:
             f'planner-{datetime.now().strftime("%Y%m%d-%H%M%S")}'
         )
         gcri_config.run_dir = self.work_dir
-        gcri_config.agents.decision.schema = None
         self.gcri_unit = GCRI(gcri_config)
         os.makedirs(self.work_dir, exist_ok=True)
         planner_config = config.agents.planner
+        if schema:
+            planner_schema = create_planner_schema(schema=schema)
+        else:
+            planner_schema = PlanProtoType
         self._planner_agent = init_chat_model(
             planner_config.model_id,
             **planner_config.parameters
-        ).with_structured_output(Plan)
+        ).with_structured_output(planner_schema)
         compression_config = config.agents.compression
         self._compression_agent = init_chat_model(
             compression_config.model_id,
@@ -70,12 +74,21 @@ class GCRIMetaPlanner:
         logger.info(f'PLANNING ITER #{state.plan_count} | Analyzing context...')
         exec_history = '\n'.join(state.knowledge_context) if state.knowledge_context else 'No prior actions taken.'
         template_path = self.config.templates.planner
+        if self.schema:
+            schema_desc = (
+                'You MUST output the "final_answer" strictly adhering to the provided JSON Schema. '
+                'Populate all required fields (e.g., explanation, answer, confidence) '
+                'accurately based on the execution history.'
+            )
+        else:
+            schema_desc = "Provide a comprehensive text summary as the final answer."
         with open(template_path, 'r') as f:
             template = f.read().format(
                 goal=state.goal,
                 exec_history=exec_history,
                 max_tasks=self.config.plan.num_max_tasks,
-                current_step=state.plan_count+1
+                current_step=state.plan_count+1,
+                schema_desc=schema_desc
             )
         planning = self.planner_agent.invoke(template)
         logger.info(f'Planner Decision: {planning.is_finished} | Next: {planning.next_task}')

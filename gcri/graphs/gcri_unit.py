@@ -23,8 +23,9 @@ from gcri.tools.cli import build_model, get_input
 
 
 class GCRI:
-    def __init__(self, config):
+    def __init__(self, config, schema=None):
         self.config = config
+        self.schema = schema
         graph = StateGraph(TaskState)
         branch = StateGraph(BranchState)
         branch.add_node('sample_hypothesis', self.sample_hypothesis)
@@ -48,8 +49,8 @@ class GCRI:
         os.makedirs(self.run_dir, exist_ok=True)
         self._work_dir = None
         self._log_dir = None
-        if decision_schema := config.agents.decision.get('schema'):
-            decision_schema = create_decision_schema(decision_schema)
+        if schema:
+            decision_schema = create_decision_schema(schema=schema)
             logger.info(f"🔧 Custom output schema applied: {decision_schema.__name__}")
         else:
             decision_schema = DecisionProtoType
@@ -380,9 +381,11 @@ class GCRI:
             aggregated_result = json.dumps(state.aggregated_result, indent=4, ensure_ascii=False)
         else:
             aggregated_result = None
-        if self.config.agents.decision.get('schema'):
-            schema_desc = ('MUST follow the specific JSON schema provided in the tool definition. '
-                    'Populate fields based on the winning branch.')
+        if self.schema:
+            schema_desc = (
+                'MUST follow the specific JSON schema provided in the tool definition. '
+                'Populate fields based on the winning branch.'
+            )
         else:
             schema_desc = 'String (only if True). The final adopted perfect answer.'
         template = template.format(
