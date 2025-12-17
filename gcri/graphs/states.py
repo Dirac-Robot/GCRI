@@ -63,7 +63,7 @@ class TaskState(BaseModel):
     best_branch_index: Optional[int] = None
     aggregated_result: Optional[List[Dict[str, Any]]] = None
     decision: Optional[bool] = None
-    final_output: Optional[str] = None
+    final_output: Optional[Any] = None
     global_feedback: Optional[str] = None
     branch_evaluations: List[BranchAnalysis] = Field(default_factory=list)
     memory: StructuredMemory = Field(default_factory=StructuredMemory)
@@ -86,8 +86,8 @@ class GlobalState(BaseModel):
     goal: str
     knowledge_context: List[str] = Field(default_factory=list)
     current_task: Optional[str] = None
-    final_answer: Optional[str] = None
-    mid_result: Optional[str] = None
+    final_answer: Optional[Any] = None
+    mid_result: Optional[Any] = None
     plan_count: int = 0
     memory: StructuredMemory = Field(default_factory=StructuredMemory)
 

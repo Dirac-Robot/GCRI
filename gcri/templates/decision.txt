@@ -56,6 +56,6 @@ Input:
 Output Requirement:
 1. `branch_evaluations`: List of analysis.
 2. `decision`: Boolean.
-3. `best_branch_index`: Integer (Required if decision is True. The 0-based index of the winning branch. None if decision is False).
-4. `final_output`: String (only if True).
+3. `best_branch_index`: ...
+4. `final_output`: {schema_desc}
 5. `global_feedback`: String (only if False).

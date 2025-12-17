@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 
 class RefutationStatus(str, Enum):
@@ -83,10 +83,10 @@ class BranchAnalysis(BaseModel):
     reasoning: str = Field(..., description='Basis for judgment on whether the hypothesis survived or was rejected')
 
 
-class Decision(BaseModel):
+class DecisionProtoType(BaseModel):
     decision: bool = Field(..., description='Final approval decision (True if at least one is perfect)')
     best_branch_index: Optional[int] = None
-    final_output: Optional[str] = Field(None, description='The final adopted perfect answer')
+    final_output: Optional[Any] = Field(None, description='The final adopted perfect answer')
     global_feedback: Optional[str] = Field(
         None,
         description='Strategic direction for the next turn synthesizing all failures'
@@ -97,7 +97,7 @@ class Decision(BaseModel):
 class Plan(BaseModel):
     thought: str = Field(description='Reasoning for the current analysis and plan formulation')
     next_task: Optional[str] = Field(description='Specific single task to be performed next (None if finished)')
-    final_answer: Optional[str] = Field(description='Final answer if the goal is achieved (None if in progress)')
+    final_answer: Optional[Any] = Field(description='Final answer if the goal is achieved (None if in progress)')
     is_finished: bool = Field(description='Whether the goal has been achieved')
 
 
@@ -107,3 +107,14 @@ class Compression(BaseModel):
         description='Filtered list of active constraints. Remove duplicates, obsolete rules, or trivial details.'
     )
     discard_reason: str = Field(description='Brief reason why certain details were compressed or discarded.')
+
+
+def create_decision_schema(decision_schema):
+    return create_model(
+        'CustomDecision',
+        __base__=DecisionProtoType,
+        final_output=(
+            Optional[decision_schema],
+            Field(None, description='The final structured answer matching the required schema.')
+        )
+    )

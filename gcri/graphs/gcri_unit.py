@@ -14,9 +14,9 @@ from gcri.graphs.schemas import (
     Reasoning,
     Hypothesis,
     Strategies,
-    Decision,
+    DecisionProtoType,
     FailureCategory,
-    ActiveConstraints
+    ActiveConstraints, create_decision_schema
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
 from gcri.tools.cli import build_model, get_input
@@ -48,12 +48,17 @@ class GCRI:
         os.makedirs(self.run_dir, exist_ok=True)
         self._work_dir = None
         self._log_dir = None
+        if decision_schema := config.agents.decision.get('schema'):
+            decision_schema = create_decision_schema(decision_schema)
+            logger.info(f"🔧 Custom output schema applied: {decision_schema.__name__}")
+        else:
+            decision_schema = DecisionProtoType
         decision_agent = build_model(
             decision_config.model_id,
             decision_config.get('gcri_options'),
             work_dir=self._work_dir,
             **decision_config.parameters
-        ).with_structured_output(schema=Decision)
+        ).with_structured_output(schema=decision_schema)
         memory_config = config.agents.memory
         memory_agent = build_model(
             memory_config.model_id,
@@ -375,11 +380,17 @@ class GCRI:
             aggregated_result = json.dumps(state.aggregated_result, indent=4, ensure_ascii=False)
         else:
             aggregated_result = None
+        if self.config.agents.decision.get('schema'):
+            schema_desc = ('MUST follow the specific JSON schema provided in the tool definition. '
+                    'Populate fields based on the winning branch.')
+        else:
+            schema_desc = 'String (only if True). The final adopted perfect answer.'
         template = template.format(
             task=state.task,
             aggregated_result=aggregated_result,
             file_contexts=file_contexts,
-            failure_category_list=self._get_failure_category_description()
+            failure_category_list=self._get_failure_category_description(),
+            schema_desc=schema_desc
         )
         for _ in range(self.config.protocols.max_tries_per_agent):
             decision = self.decision_agent.invoke(template)

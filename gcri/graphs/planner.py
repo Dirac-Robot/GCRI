@@ -11,17 +11,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 from gcri.graphs.gcri_unit import GCRI
 from gcri.graphs.schemas import Plan, Compression
-from gcri.graphs.states import StructuredMemory
-
-
-class GlobalState(BaseModel):
-    goal: str
-    knowledge_context: List[str] = Field(default_factory=list)
-    current_task: Optional[str] = None
-    final_answer: Optional[str] = None
-    mid_result: Optional[str] = None
-    plan_count: int = 0
-    memory: StructuredMemory = Field(default_factory=StructuredMemory)
+from gcri.graphs.states import StructuredMemory, GlobalState
 
 
 class GCRIMetaPlanner:
@@ -34,6 +24,7 @@ class GCRIMetaPlanner:
             f'planner-{datetime.now().strftime("%Y%m%d-%H%M%S")}'
         )
         gcri_config.run_dir = self.work_dir
+        gcri_config.agents.decision.schema = None
         self.gcri_unit = GCRI(gcri_config)
         os.makedirs(self.work_dir, exist_ok=True)
         planner_config = config.agents.planner
@@ -120,7 +111,6 @@ class GCRIMetaPlanner:
     def compress_memory(self, state: GlobalState):
         logger.info(f'Compress memory of #{state.plan_count}...')
         raw_constraints = state.memory.active_constraints
-
         template_path = self.config.templates.compression
         with open(template_path, 'r') as f:
             template = f.read().format(
