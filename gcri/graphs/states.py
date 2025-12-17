@@ -54,10 +54,7 @@ class HypothesisResult(BaseModel):
 class TaskState(BaseModel):
     count: int = 0
     task: str
-    task_strictness: Optional[Literal['strict', 'moderate', 'creative']] = Field(
-        None,
-        description='The strictness level inferred from the task.'
-    )
+    task_strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
     strategies: List[Strategy] = Field(
         default_factory=list,
         description='List of generated strategies.'
