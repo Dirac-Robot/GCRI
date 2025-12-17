@@ -117,7 +117,7 @@ def apply_custom_config(config):
 def no_code_tools(config):
     for agent_name, agent_info in config.agents.items():
         if agent_name == 'branches':
-            for branch_info in agent_info.items():
+            for branch_info in agent_info:
                 for branch_agent_name, branch_agent_info in branch_info.items():
                     if 'gcri_options' in branch_agent_info:
                         branch_agent_info.gcri_options.update(
