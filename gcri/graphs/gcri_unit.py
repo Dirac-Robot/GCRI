@@ -1,7 +1,4 @@
 import json
-import os
-import shutil
-from datetime import datetime
 
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
@@ -20,59 +17,68 @@ from gcri.graphs.schemas import (
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
 from gcri.tools.cli import build_model, get_input
+from gcri.tools.utils import SandboxManager
 
 
 class GCRI:
     def __init__(self, config, schema=None):
         self.config = config
         self.schema = schema
+        self.sandbox = SandboxManager(config)
+
         graph = StateGraph(TaskState)
         branch = StateGraph(BranchState)
+
         branch.add_node('sample_hypothesis', self.sample_hypothesis)
         branch.add_node('reasoning_and_refine', self.reasoning_and_refine)
         branch.add_node('verify', self.verify)
+
         branch.add_edge(START, 'sample_hypothesis')
         branch.add_edge('sample_hypothesis', 'reasoning_and_refine')
         branch.add_edge('reasoning_and_refine', 'verify')
         branch.add_edge('verify', END)
+
         branch_workflow = branch.compile()
         graph.add_node('branch_executor', branch_workflow)
+
         strategy_generator_config = config.agents.strategy_generator
         strategy_agent = build_model(
             strategy_generator_config.model_id,
             strategy_generator_config.get('gcri_options'),
             **strategy_generator_config.parameters
         ).with_structured_output(schema=Strategies)
+
         decision_config = config.agents.decision
-        self._project_dir = config.project_dir
-        self._run_dir = config.run_dir
-        os.makedirs(self.run_dir, exist_ok=True)
-        self._work_dir = None
-        self._log_dir = None
+
         if schema:
             decision_schema = create_decision_schema(schema=schema)
-            logger.info(f"🔧 Custom output schema applied: {decision_schema.__name__}")
+            logger.info(f'🔧 Custom output schema applied: {decision_schema.__name__}')
         else:
             decision_schema = DecisionProtoType
+
         decision_agent = build_model(
             decision_config.model_id,
             decision_config.get('gcri_options'),
-            work_dir=self._work_dir,
+            work_dir=None,
             **decision_config.parameters
         ).with_structured_output(schema=decision_schema)
+
         memory_config = config.agents.memory
         memory_agent = build_model(
             memory_config.model_id,
             memory_config.get('gcri_options'),
             **memory_config.parameters
         ).with_structured_output(schema=ActiveConstraints)
+
         self._strategy_agent = strategy_agent
         self._decision_agent = decision_agent
         self._memory_agent = memory_agent
+
         graph.add_node('sample_strategies', self.sample_strategies)
         graph.add_node('aggregate', self.aggregate)
         graph.add_node('decision', self.decide)
         graph.add_node('update_memory', self.update_memory)
+
         graph.add_edge(START, 'sample_strategies')
         graph.add_conditional_edges(
             'sample_strategies',
@@ -83,32 +89,9 @@ class GCRI:
         graph.add_edge('aggregate', 'decision')
         graph.add_edge('decision', 'update_memory')
         graph.add_edge('update_memory', END)
+
         self._graph = graph
         self._workflow = graph.compile()
-
-    def _setup_sandbox(self):
-        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-        self._work_dir = os.path.join(self.run_dir, f'run-{timestamp}')
-        self._log_dir = os.path.join(self.work_dir, f'logs')
-        logger.info(f"📦 Creating workspaces in sandbox at: {self.work_dir}")
-        os.makedirs(self.work_dir, exist_ok=True)
-        os.makedirs(self.log_dir, exist_ok=True)
-
-    @property
-    def project_dir(self):
-        return self._project_dir
-
-    @property
-    def run_dir(self):
-        return self._run_dir
-
-    @property
-    def work_dir(self):
-        return self._work_dir
-
-    @property
-    def log_dir(self):
-        return self._log_dir
 
     @property
     def graph(self):
@@ -118,47 +101,12 @@ class GCRI:
     def workflow(self):
         return self._workflow
 
-    def _smart_copy(self, src, dst, *, follow_symlinks=True):
-        limit_bytes = self.config.protocols.max_copy_size*1024*1024  # 10MB
-        try:
-            if os.path.islink(src):
-                link_to = os.readlink(src)
-                os.symlink(link_to, dst)
-            elif os.path.getsize(src) > limit_bytes:
-                os.symlink(os.path.abspath(src), dst)
-            else:
-                shutil.copy2(src, dst)
-        except Exception as e:
-            logger.warning(f'Smart copy failed for {src}: {e}')
-
     def map_branches(self, state: TaskState):
         num_branches = min(len(self.config.agents.branches), len(state.strategies))
-        root_dir = os.path.join(self.work_dir, 'workspaces')
-        os.makedirs(root_dir, exist_ok=True)
         sends = []
-        ignore = shutil.ignore_patterns(
-            '.git',
-            '__pycache__',
-            'venv',
-            'env',
-            'node_modules',
-            '.idea',
-            '.vscode',
-            '.gcri',
-            '*.pyc'
-        )
+
         for index in range(num_branches):
-            branch_workspace = os.path.join(root_dir, f'iter_{state.count}_branch_{index}')
-            if os.path.exists(branch_workspace):
-                shutil.rmtree(branch_workspace)
-            os.makedirs(branch_workspace, exist_ok=True)
-            shutil.copytree(
-                self.project_dir,
-                branch_workspace,
-                ignore=ignore,
-                copy_function=self._smart_copy,
-                dirs_exist_ok=True
-            )
+            branch_workspace = self.sandbox.setup_branch(state.count, index)
             sends.append(
                 Send(
                     'branch_executor',
@@ -338,42 +286,11 @@ class GCRI:
             descriptions.append(f'- {code.value}')
         return '\n'.join(descriptions)
 
-    @classmethod
-    def _commit_winning_branch(cls, winning_branch_path, project_root):
-        logger.info(f'💾 Merging changes from winning branch: {winning_branch_path}')
-        ignore_patterns = {'.git', '__pycache__', 'venv', 'env', '.idea', 'workspaces'}
-        for root, dirs, files in os.walk(winning_branch_path):
-            dirs[:] = [d for d in dirs if d not in ignore_patterns]
-            rel_path = os.path.relpath(root, winning_branch_path)
-            target_dir = os.path.join(project_root, rel_path)
-            if not os.path.exists(target_dir):
-                os.makedirs(target_dir)
-            for file in files:
-                if file in ignore_patterns or file.endswith('.pyc'):
-                    continue
-                src_file = os.path.join(root, file)
-                dst_file = os.path.join(target_dir, file)
-                if os.path.islink(src_file):
-                    continue
-                try:
-                    shutil.copy2(src_file, dst_file)
-                except Exception as e:
-                    logger.error(f'Failed to copy {src_file}: {e}')
-        logger.info('✅ Merge completed successfully.')
-
     def decide(self, state: TaskState):
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
-        file_contexts = []
-        num_results = len(state.results)
-        workspace_root = os.path.join(self.work_dir, 'workspaces')
-        for i in range(num_results):
-            branch_dir = os.path.join(workspace_root, f'iter_{state.count}_branch_{i}')
-            if os.path.exists(branch_dir):
-                rel_path = os.path.relpath(branch_dir, start=self.work_dir)
-                file_contexts.append(f'- Branch {i} files location: {rel_path}')
-            else:
-                file_contexts.append(f'- Branch {i} files location: (Directory not found)')
-        file_contexts = '\n'.join(file_contexts)
+
+        file_contexts = self.sandbox.get_branch_context(state.count, len(state.results))
+
         template_path = self.config.templates.decision
         with open(template_path, 'r') as f:
             template = f.read()
@@ -395,6 +312,9 @@ class GCRI:
             failure_category_list=self._get_failure_category_description(),
             schema_desc=schema_desc
         )
+
+        self.decision_agent.agent.work_dir = self.sandbox.work_dir
+
         for _ in range(self.config.protocols.max_tries_per_agent):
             decision = self.decision_agent.invoke(template)
             if decision is not None:
@@ -457,11 +377,12 @@ class GCRI:
         }
 
     def __call__(self, task, initial_memory=None, auto_commit=False):
-        self._setup_sandbox()
-        self.decision_agent.work_dir = self.work_dir
+        self.sandbox.setup()
+
         feedback = ''
         memory = initial_memory if initial_memory is not None else StructuredMemory()
         result = None
+
         if isinstance(task, dict):
             logger.info('🔄 State object detected. Resuming from previous state in memory...')
             try:
@@ -488,27 +409,26 @@ class GCRI:
                         }
                     )
                     result = TypeAdapter(TaskState).validate_python(result).model_dump(mode='json')
-                    os.makedirs(self.log_dir, exist_ok=True)
-                    log_path = os.path.join(self.log_dir, f'log_iteration_{index:02d}.json')
-                    with open(log_path, 'w', encoding='utf-8') as f:
-                        json.dump(result, f, indent=4, ensure_ascii=False)
-                    logger.info(f'Result of iteration {index} saved to: {log_path}')
+
+                    self.sandbox.save_iteration_log(index, result)
+
                     if result['decision']:
                         logger.info('Final result is successfully deduced.')
-                        logger.info(f'Task Completed. Check sandbox: {self.work_dir}')
+                        logger.info(f'Task Completed. Check sandbox: {self.sandbox.work_dir}')
                         best_branch_index = result.get('best_branch_index')
                         if best_branch_index is None:
                             logger.warning(
                                 'Decision is True but no branch index provided. Cannot commit automatically.'
                             )
                             break
-                        winning_branch_path = os.path.join(
-                            self.work_dir, 'workspaces', f'iter_{index}_branch_{best_branch_index}'
-                        )
+
+                        winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
+
                         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index}')
                         logger.info(f'📂 Location: {winning_branch_path}')
+
                         if auto_commit or get_input('Apply this result to project root? (y/n): ').lower() == 'y':
-                            self._commit_winning_branch(winning_branch_path, self.project_dir)
+                            self.sandbox.commit_winning_branch(winning_branch_path)
                         else:
                             logger.info('Changes discarded.')
                         break
