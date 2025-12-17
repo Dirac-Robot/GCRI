@@ -1,5 +1,5 @@
 # GCRI
-**Generalized Counterexample-Reinforced Intelligence**
+**Generalized Cognitive Refinement Iteration**
 
 <p align="center">
   <img src="assets/GCRI-Character.jpeg" alt="GCRI Mascot" width="400"/>
@@ -7,7 +7,7 @@
 
 ## Overview
 
-GCRI (Generative Code Reasoning Intelligence) Single Unit is a **Hierarchical Multi-Agent System** where central coordination and field execution are separated. Rather than simply generating code, strategy formulation-execution-verification-evaluation stages are performed by different specialized agents, and this process occurs in isolated sandbox environments.
+GCRI (Generalized Cognitive Refinement Iteration) Single Unit is a **Hierarchical Multi-Agent System** where central coordination and field execution are separated. Rather than simply generating code, strategy formulation-execution-verification-evaluation stages are performed by different specialized agents, and this process occurs in isolated sandbox environments.
 
 This is not just an LLM wrapper—it's an agent-centric architecture where multiple teams compete, critique, and converge to produce verified solutions.
 
