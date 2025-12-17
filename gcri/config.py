@@ -29,6 +29,9 @@ def default(config):
         model_id='gpt-5.2',
         parameters=ADict(
             max_tokens=25600
+        ),
+        gcri_options=ADict(
+            use_web_search=True
         )
     )
     config.agents.compression = dict(
@@ -41,6 +44,9 @@ def default(config):
         model_id='gpt-5-mini',
         parameters=ADict(
             max_tokens=25600
+        ),
+        gcri_options=ADict(
+            use_web_search=True
         )
     )
     config.agents.branches = [
@@ -65,7 +71,8 @@ def default(config):
         ),
         gcri_options=ADict(
             use_code_tools=True,
-            use_web_search=True
+            use_web_search=True,
+            max_recursion_depth=None
         )
     )
     config.agents.memory = dict(
@@ -75,7 +82,8 @@ def default(config):
         ),
         gcri_options=ADict(
             use_code_tools=True,
-            use_web_search=True
+            use_web_search=True,
+            max_recursion_depth=None
         )
     )
     config.templates = dict(
@@ -111,6 +119,23 @@ def apply_custom_config(config):
         else:
             logger.warning(f'Cannot find custom config: {config.custom_config_path}')
             logger.warning(f'Fallback to default config...')
+
+
+@scope.observe()
+def no_web_search(config):
+    for agent_name, agent_info in config.agents.items():
+        if agent_name == 'branches':
+            for branch_info in agent_info:
+                for branch_agent_name, branch_agent_info in branch_info.items():
+                    if 'gcri_options' in branch_agent_info:
+                        branch_agent_info.gcri_options.update(
+                            use_web_search=False
+                        )
+        else:
+            if 'gcri_options' in agent_info:
+                agent_info.gcri_options.update(
+                    use_web_search=False
+                )
 
 
 @scope.observe()
