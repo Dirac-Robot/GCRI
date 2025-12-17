@@ -27,30 +27,30 @@ def default(config):
     config.custom_config_path = None
     config.agents.planner = dict(
         model_id='gpt-5.2',
-        parameters=dict(
+        parameters=ADict(
             max_tokens=25600
         )
     )
     config.agents.compression = dict(
         model_id='gpt-5-mini',
-        parameters=dict(
+        parameters=ADict(
             max_tokens=25600
         )
     )
     config.agents.strategy_generator = dict(
         model_id='gpt-5-mini',
-        parameters=dict(
+        parameters=ADict(
             max_tokens=25600
         )
     )
     config.agents.branches = [
         {
-            agent_name: dict(
+            agent_name: ADict(
                 model_id='gpt-5-mini',
                 parameters=dict(
                     max_tokens=25600
                 ),
-                gcri_options=dict(
+                gcri_options=ADict(
                     use_code_tools=True,
                     use_web_search=True,
                     max_recursion_depth=None
@@ -58,22 +58,22 @@ def default(config):
             ) for agent_name in AGENT_NAMES_IN_BRANCH
         } for _ in range(3)
     ]
-    config.agents.decision = dict(
+    config.agents.decision = ADict(
         model_id='gpt-5.2',
-        parameters=dict(
+        parameters=ADict(
             max_tokens=25600
         ),
-        gcri_options=dict(
+        gcri_options=ADict(
             use_code_tools=True,
             use_web_search=True
         )
     )
     config.agents.memory = dict(
         model_id='gpt-5-mini',
-        parameters=dict(
+        parameters=ADict(
             max_tokens=25600
         ),
-        gcri_options=dict(
+        gcri_options=ADict(
             use_code_tools=True,
             use_web_search=True
         )
@@ -119,13 +119,15 @@ def no_code_tools(config):
         if agent_name == 'branches':
             for branch_info in agent_info.items():
                 for branch_agent_name, branch_agent_info in branch_info.items():
-                    branch_agent_info.gcri_options.update(
-                        use_code_tools=False
-                    )
+                    if 'gcri_options' in branch_agent_info:
+                        branch_agent_info.gcri_options.update(
+                            use_code_tools=False
+                        )
         else:
-            agent_info.gcri_options.update(
-                use_code_tools=False
-            )
+            if 'gcri_options' in agent_info:
+                agent_info.gcri_options.update(
+                    use_code_tools=False
+                )
 
 
 @scope.observe()
