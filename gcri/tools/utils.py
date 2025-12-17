@@ -98,7 +98,7 @@ class SandboxManager:
         log_path = os.path.join(self.log_dir, f'log_iteration_{index:02d}.json')
         with open(log_path, 'w', encoding='utf-8') as f:
             json.dump(result_data, f, indent=4, ensure_ascii=False)
-        logger.info(f'Result of iteration {index} saved to: {log_path}')
+        logger.info(f'Result of iteration {index+1} saved to: {log_path}')
         return log_path
 
     def get_winning_branch_path(self, index, branch_index):
