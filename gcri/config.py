@@ -114,7 +114,7 @@ def apply_custom_config(config):
 
 
 @scope.observe()
-def no_tools(config):
+def no_code_tools(config):
     for agent_name, agent_info in config.agents.items():
         if agent_name == 'branches':
             for branch_info in agent_info.items():
@@ -124,7 +124,7 @@ def no_tools(config):
                     )
         else:
             agent_info.gcri_options.update(
-                use_code_tools=False,
+                use_code_tools=False
             )
 
 
