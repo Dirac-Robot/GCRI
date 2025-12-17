@@ -313,7 +313,7 @@ class GCRI:
             schema_desc=schema_desc
         )
 
-        self.decision_agent.agent.work_dir = self.sandbox.work_dir
+        self.decision_agent.work_dir = self.sandbox.work_dir
 
         for _ in range(self.config.protocols.max_tries_per_agent):
             decision = self.decision_agent.invoke(template)
