@@ -157,7 +157,7 @@ class GCRI:
         return dict(task_strictness=strategies.strictness, strategies=strategies.strategies)
 
     def sample_hypothesis(self, state: BranchState):
-        logger.info(f'Iter #{state.count_in_branch+1} | Request sampling hypothesis for strategy #{state.index}...')
+        logger.info(f'Iter #{state.count_in_branch+1} | Request sampling hypothesis for strategy #{state.index+1}...')
         work_dir = state.work_dir
         hypothesis_config = self.config.agents.branches[state.index].hypothesis
         agent = build_model(
@@ -181,13 +181,13 @@ class GCRI:
             raise ValueError(
                 f'Agent could not generate hypothesis '
                 f'for {self.config.protocols.max_tries_per_agent} times '
-                f'at strategy #{state.index}.'
+                f'at strategy #{state.index+1}.'
             )
-        logger.info(f'Iter #{state.count_in_branch+1} | Sampled hypothesis #{state.index}: {hypothesis.hypothesis}')
+        logger.info(f'Iter #{state.count_in_branch+1} | Sampled hypothesis #{state.index+1}: {hypothesis.hypothesis}')
         return dict(hypothesis=hypothesis.hypothesis)
 
     def reasoning_and_refine(self, state: BranchState):
-        logger.info(f'Iter #{state.count_in_branch+1} | Request reasoning and refining hypothesis #{state.index}...')
+        logger.info(f'Iter #{state.count_in_branch+1} | Request reasoning and refining hypothesis #{state.index+1}...')
         work_dir = state.work_dir
         reasoning_config = self.config.agents.branches[state.index].reasoning
         agent = build_model(
@@ -211,11 +211,11 @@ class GCRI:
             raise ValueError(
                 f'Agent could not generate refined hypothesis '
                 f'for {self.config.protocols.max_tries_per_agent} times '
-                f'at hypothesis #{state.index}.'
+                f'at hypothesis #{state.index+1}.'
             )
         logger.info(
             f'Iter #{state.count_in_branch+1} | '
-            f'Refined hypothesis #{state.index}: {reasoning.refined_hypothesis}'
+            f'Refined hypothesis #{state.index+1}: {reasoning.refined_hypothesis}'
         )
         return dict(
             reasoning=reasoning.reasoning,
@@ -235,7 +235,7 @@ class GCRI:
         return self._memory_agent
 
     def verify(self, state: BranchState):
-        logger.info(f'Iter #{state.count_in_branch+1} | Request verifying refined hypothesis #{state.index}...')
+        logger.info(f'Iter #{state.count_in_branch+1} | Request verifying refined hypothesis #{state.index+1}...')
         work_dir = state.work_dir
         verification_config = self.config.agents.branches[state.index].verification
         agent = build_model(
@@ -274,7 +274,7 @@ class GCRI:
         )
         logger.info(
             f'Iter #{state.count_in_branch+1} | '
-            f'Counter-Example of Hypothesis #{state.index}(Counter Strength: {verification.counter_strength}): '
+            f'Counter-Example of Hypothesis #{state.index+1}(Counter Strength: {verification.counter_strength}): '
             f'{verification.counter_example}'
         )
         return {'results': [result]}
@@ -331,7 +331,7 @@ class GCRI:
             )
         logger.info(f'Decision: {decision.decision}')
         if decision.decision:
-            logger.info(f'Selected Best Branch Index: {decision.best_branch_index}')
+            logger.info(f'Selected Best Branch Index: {decision.best_branch_index+1}')
         else:
             logger.info(f'Feedback: {decision.global_feedback}')
         return {
@@ -401,8 +401,10 @@ class GCRI:
             except Exception as e:
                 logger.error(f'Failed to restore state from object: {e}')
                 raise ValueError('Invalid state object provided.')
+        else:
+            start_index = 0
         try:
-            for index in range(self.config.max_iterations):
+            for index in range(start_index, self.config.max_iterations):
                 logger.info(f'Starting Iteration {index+1}...')
                 try:
                     result = self.workflow.invoke(
@@ -429,7 +431,7 @@ class GCRI:
 
                         winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
 
-                        logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index}')
+                        logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
                         logger.info(f'📂 Location: {winning_branch_path}')
 
                         if auto_commit or get_input('Apply this result to project root? (y/n): ').lower() == 'y':
