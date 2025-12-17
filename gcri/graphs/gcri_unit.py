@@ -299,9 +299,14 @@ class GCRI:
         else:
             aggregated_result = None
         if self.schema:
+            try:
+                schema_json = json.dumps(self.schema.model_json_schema(), indent=2, ensure_ascii=False)
+            except AttributeError:
+                schema_json = str(self.schema)
             schema_desc = (
-                'MUST follow the specific JSON schema provided in the tool definition. '
-                'Populate fields based on the winning branch.'
+                f'MUST follow the specific JSON schema for "final_output" provided below:\n'
+                f'{schema_json}\n'
+                'Ensure ALL required fields (e.g., answer, confidence) are populated exactly as defined.'
             )
         else:
             schema_desc = 'String (only if True). The final adopted perfect answer.'
@@ -398,7 +403,7 @@ class GCRI:
                 raise ValueError('Invalid state object provided.')
         try:
             for index in range(self.config.max_iterations):
-                logger.info(f'Starting Iteration {index}...')
+                logger.info(f'Starting Iteration {index+1}...')
                 try:
                     result = self.workflow.invoke(
                         {
@@ -436,10 +441,10 @@ class GCRI:
                         memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])
                         feedback = result['feedback']
                 except KeyboardInterrupt:
-                    logger.warning(f'Iteration {index} interrupted by user. Stopping...')
+                    logger.warning(f'Iteration {index+1} interrupted by user. Stopping...')
                     raise
                 except Exception as e:
-                    logger.error(f'Iteration {index} error: {e}')
+                    logger.error(f'Iteration {index+1} error: {e}')
             else:
                 logger.info('Final result is not deduced, but iteration count is over.')
         except KeyboardInterrupt:

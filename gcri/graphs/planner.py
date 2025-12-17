@@ -75,10 +75,14 @@ class GCRIMetaPlanner:
         exec_history = '\n'.join(state.knowledge_context) if state.knowledge_context else 'No prior actions taken.'
         template_path = self.config.templates.planner
         if self.schema:
+            try:
+                schema_json = json.dumps(self.schema.model_json_schema(), indent=2, ensure_ascii=False)
+            except AttributeError:
+                schema_json = str(self.schema)
             schema_desc = (
-                'You MUST output the "final_answer" strictly adhering to the provided JSON Schema. '
-                'Populate all required fields (e.g., explanation, answer, confidence) '
-                'accurately based on the execution history.'
+                f'MUST follow the specific JSON schema for "final_output" provided below:\n'
+                f'{schema_json}\n'
+                'Ensure ALL required fields (e.g., answer, confidence) are populated exactly as defined.'
             )
         else:
             schema_desc = "Provide a comprehensive text summary as the final answer."
