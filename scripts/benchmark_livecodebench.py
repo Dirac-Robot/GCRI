@@ -112,16 +112,30 @@ def evaluate_lcb(sample, completion_code):
     else:
         return False, f"Unknown test case format: {type(raw_cases)}"
 
-    # 최종 검증: test_cases가 딕셔너리인지 확인
-    if not isinstance(test_cases, dict):
-        return False, f"Test cases parsed to {type(test_cases).__name__}, not dict"
-
-    # 2. 파싱된 변수(test_cases)를 사용해야 함 (sample[...] 사용 금지)
-    try:
-        inputs = test_cases['input']
-        outputs = test_cases['output']
-    except KeyError:
-        return False, "Missing 'input' or 'output' fields in test cases"
+    # 리스트 형태 처리: [{"input": x, "output": y}, ...] or [[inputs...], [outputs...]]
+    if isinstance(test_cases, list):
+        if len(test_cases) > 0:
+            # Case 1: 리스트의 각 요소가 딕셔너리 (각 테스트 케이스가 dict)
+            if isinstance(test_cases[0], dict) and 'input' in test_cases[0] and 'output' in test_cases[0]:
+                inputs = [tc['input'] for tc in test_cases]
+                outputs = [tc['output'] for tc in test_cases]
+            # Case 2: [[inputs...], [outputs...]] 형태
+            elif len(test_cases) == 2 and isinstance(test_cases[0], list) and isinstance(test_cases[1], list):
+                inputs = test_cases[0]
+                outputs = test_cases[1]
+            else:
+                return False, f"Unsupported list format: {test_cases[:2] if len(test_cases) > 1 else test_cases}"
+        else:
+            return False, "Empty test cases list"
+    # 딕셔너리 형태 처리: {"input": [...], "output": [...]}
+    elif isinstance(test_cases, dict):
+        try:
+            inputs = test_cases['input']
+            outputs = test_cases['output']
+        except KeyError:
+            return False, "Missing 'input' or 'output' fields in test cases"
+    else:
+        return False, f"Test cases parsed to {type(test_cases).__name__}, unsupported type"
 
     # 3. 엔트리 포인트 탐색
     entry_point = 'solve'
