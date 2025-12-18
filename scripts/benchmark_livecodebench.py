@@ -84,8 +84,46 @@ def run_test_case_lcb(user_code, test_inputs, test_outputs, entry_point, result_
 
 
 def evaluate_lcb(sample, completion_code):
-    inputs = sample['public_test_cases']['input']
-    outputs = sample['public_test_cases']['output']
+    # 1. public_test_cases 파싱 (문자열 -> 딕셔너리 변환)
+    raw_cases = sample.get('public_test_cases', {})
+    test_cases = {}
+
+    if isinstance(raw_cases, dict):
+        test_cases = raw_cases
+    elif isinstance(raw_cases, str):
+        # 1차 시도: JSON 표준 파싱 (Double Quotes)
+        try:
+            test_cases = json.loads(raw_cases)
+            # 이중 인코딩 처리: 파싱 결과가 여전히 문자열이면 한 번 더 시도
+            while isinstance(test_cases, str):
+                test_cases = json.loads(test_cases)
+        except json.JSONDecodeError:
+            # 2차 시도: Python 리터럴 파싱 (Single Quotes 등) - LCB 데이터셋은 이 경우가 많음
+            try:
+                test_cases = ast.literal_eval(raw_cases)
+                # 이중 인코딩 처리
+                while isinstance(test_cases, str):
+                    try:
+                        test_cases = json.loads(test_cases)
+                    except:
+                        test_cases = ast.literal_eval(test_cases)
+            except Exception as e:
+                return False, f"Test case parsing failed: {str(e)}"
+    else:
+        return False, f"Unknown test case format: {type(raw_cases)}"
+
+    # 최종 검증: test_cases가 딕셔너리인지 확인
+    if not isinstance(test_cases, dict):
+        return False, f"Test cases parsed to {type(test_cases).__name__}, not dict"
+
+    # 2. 파싱된 변수(test_cases)를 사용해야 함 (sample[...] 사용 금지)
+    try:
+        inputs = test_cases['input']
+        outputs = test_cases['output']
+    except KeyError:
+        return False, "Missing 'input' or 'output' fields in test cases"
+
+    # 3. 엔트리 포인트 탐색
     entry_point = 'solve'
     starter_code = sample.get('starter_code', '')
     if starter_code:
@@ -99,17 +137,22 @@ def evaluate_lcb(sample, completion_code):
                     entry_point = node.name
         except:
             pass
+
+    # 4. 멀티프로세싱 실행
     result_queue = multiprocessing.Queue()
     process = multiprocessing.Process(
         target=run_test_case_lcb,
         args=(completion_code, inputs, outputs, entry_point, result_queue)
     )
+
     process.start()
     process.join(TIMEOUT_SECONDS)
+
     if process.is_alive():
         process.terminate()
         process.join()
         return False, 'Timeout'
+
     if not result_queue.empty():
         result = result_queue.get()
         if result == 'passed':
@@ -122,12 +165,28 @@ def evaluate_lcb(sample, completion_code):
 
 @scope
 def run_benchmark(config, num_samples=None):
+    config.protocols.force_output = True
+    logger.info(config.to_xyz())
     load_dotenv()
     setup_directories()
     logger.info('🤖 GCRI Worker Initializing for LiveCodeBench (Hard Mode)...')
     worker = GCRI(config, schema=LCBSolution)
     logger.info('📚 Loading LiveCodeBench dataset...')
-    dataset = load_dataset('livecodebench/lcb_v1', split='test')
+    try:
+        # release_v2 등 특정 버전을 명시할 수도 있습니다. (기본값은 최신)
+        dataset = load_dataset(
+            'livecodebench/code_generation_lite',
+            split='test',
+            trust_remote_code=True
+        )
+        logger.info("✅ Loaded 'code_generation_lite' dataset successfully.")
+    except Exception as e:
+        logger.warning(f"Lite version load failed ({e}), trying full version...")
+        dataset = load_dataset(
+            'livecodebench/code_generation',
+            split='test',
+            trust_remote_code=True
+        )
     dataset = dataset.filter(lambda x: x['difficulty'] in ['medium', 'hard'])
     logger.info(f'📉 Filtered (Medium/Hard) size: {len(dataset)}')
     if num_samples:
