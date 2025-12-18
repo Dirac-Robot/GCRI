@@ -274,7 +274,7 @@ class GCRI:
         )
         logger.info(
             f'Iter #{state.count_in_branch+1} | '
-            f'Counter-Example of Hypothesis #{state.index+1}(Counter Strength: {verification.counter_strength}): '
+            f'Counter-Example of Hypothesis #{state.index+1} (Counter Strength: {verification.counter_strength}): '
             f'{verification.counter_example}'
         )
         return {'results': [result]}
