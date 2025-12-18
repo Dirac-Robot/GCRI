@@ -288,9 +288,7 @@ class GCRI:
 
     def decide(self, state: TaskState):
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
-
         file_contexts = self.sandbox.get_branch_context(state.count, len(state.results))
-
         template_path = self.config.templates.decision
         with open(template_path, 'r') as f:
             template = f.read()
@@ -317,9 +315,7 @@ class GCRI:
             failure_category_list=self._get_failure_category_description(),
             schema_desc=schema_desc
         )
-
         self.decision_agent.work_dir = self.sandbox.work_dir
-
         for _ in range(self.config.protocols.max_tries_per_agent):
             decision = self.decision_agent.invoke(template)
             if decision is not None:
@@ -383,11 +379,9 @@ class GCRI:
 
     def __call__(self, task, initial_memory=None, auto_commit=False):
         self.sandbox.setup()
-
         feedback = ''
         memory = initial_memory if initial_memory is not None else StructuredMemory()
         result = None
-
         if isinstance(task, dict):
             logger.info('🔄 State object detected. Resuming from previous state in memory...')
             try:
@@ -416,9 +410,7 @@ class GCRI:
                         }
                     )
                     result = TypeAdapter(TaskState).validate_python(result).model_dump(mode='json')
-
                     self.sandbox.save_iteration_log(index, result)
-
                     if result['decision']:
                         logger.info('Final result is successfully deduced.')
                         logger.info(f'Task Completed. Check sandbox: {self.sandbox.work_dir}')
@@ -430,10 +422,8 @@ class GCRI:
                             break
 
                         winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
-
                         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
                         logger.info(f'📂 Location: {winning_branch_path}')
-
                         if auto_commit or get_input('Apply this result to project root? (y/n): ').lower() == 'y':
                             self.sandbox.commit_winning_branch(winning_branch_path)
                         else:
