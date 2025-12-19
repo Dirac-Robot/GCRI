@@ -153,7 +153,7 @@ class GCRI:
                 f'for {self.config.protocols.max_tries_per_agent} times.'
             )
         for index, strategy in enumerate(strategies.strategies):
-            logger.info(f'Iter #{state.count+1} | Sampled strategy #{index}: {strategy}')
+            logger.info(f'Iter #{state.count+1} | Sampled strategy #{index+1}: {strategy}')
         return dict(task_strictness=strategies.strictness, strategies=strategies.strategies)
 
     def sample_hypothesis(self, state: BranchState):
@@ -292,6 +292,23 @@ class GCRI:
         template_path = self.config.templates.decision
         with open(template_path, 'r') as f:
             template = f.read()
+        force_output = self.config.protocols.get('force_output', False)
+        is_last_run = (state.count+1 >= self.config.protocols.max_iterations)
+        if force_output and is_last_run:
+            logger.warning(
+                f'🚨 Force Output Triggered at Iter #{state.count+1}. '
+                'Instructing agent to make a FINAL decision regardless of imperfections.'
+            )
+            force_instruction = (
+                '\n\n'
+                '!!! CRITICAL SYSTEM OVERRIDE - FINAL ITERATION !!!\n'
+                '1. You have reached the MAXIMUM iteration limit.\n'
+                '2. You MUST set \'decision\' to true.\n'
+                '3. You MUST select the single best available branch via \'best_branch_index\', '
+                'even if it is not perfect or has minor issues.\n'
+                '4. Do NOT output \'decision\': false. Do NOT provide global_feedback.'
+            )
+            template += force_instruction
         if state.aggregated_result:
             aggregated_result = json.dumps(state.aggregated_result, indent=4, ensure_ascii=False)
         else:
@@ -398,7 +415,7 @@ class GCRI:
         else:
             start_index = 0
         try:
-            for index in range(start_index, self.config.max_iterations):
+            for index in range(start_index, self.config.protocols.max_iterations):
                 logger.info(f'Starting Iteration {index+1}...')
                 try:
                     result = self.workflow.invoke(
@@ -420,7 +437,6 @@ class GCRI:
                                 'Decision is True but no branch index provided. Cannot commit automatically.'
                             )
                             break
-
                         winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
                         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
                         logger.info(f'📂 Location: {winning_branch_path}')

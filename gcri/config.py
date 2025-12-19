@@ -99,12 +99,13 @@ def default(config):
         active_memory=get_template_path('active_memory.txt'),
     )
     config.plan.num_max_tasks = 5
-    config.max_iterations = 5
     config.protocols = dict(
         accept_all=True,
         aggregate_targets=['strategy', 'hypothesis', 'counter_example', 'adjustment', 'counter_strength'],
+        max_iterations=5,
         max_tries_per_agent=3,
-        max_copy_size=10
+        max_copy_size=10,
+        force_output=False
     )
     config.project_dir = os.path.abspath(os.getcwd())
     config.run_dir = os.path.join(config.project_dir, '.gcri')

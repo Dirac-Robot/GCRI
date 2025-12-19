@@ -95,41 +95,44 @@ def evaluate_code(sample, completion_code):
 
 @scope
 def run_benchmark(config, num_samples=None):
+    config.protocols.force_output = True
+    logger.info(config.to_xyz())
     load_dotenv()
     setup_directories()
-
     logger.info('🤖 GCRI Worker Initializing for HumanEval (Execution Mode)...')
     worker = GCRI(config, schema=HumanEvalResult)
-
     logger.info('📚 Loading OpenAI HumanEval dataset...')
     try:
         dataset = load_dataset('openai_humaneval', split='test')
     except Exception as e:
         logger.error(f'Failed to load dataset: {e}')
         return
-
     if num_samples:
         dataset = dataset.select(range(min(len(dataset), num_samples)))
         logger.info(f'🔍 Running on first {num_samples} samples.')
-
     results = []
     processed_ids = set()
-
     total_processed = 0
     total_passed = 0
-
     if os.path.exists(RESULT_FILE):
         try:
             with open(RESULT_FILE, 'r', encoding='utf-8') as f:
                 existing_data = json.load(f)
-                results = existing_data
-                processed_ids = {item['task_id'] for item in existing_data}
+                valid_results = []
+                for item in existing_data:
+                    t_id = item.get('task_id')
+                    comp = item.get('completion')
+                    if comp and isinstance(comp, str) and comp.strip():
+                        valid_results.append(item)
+                        processed_ids.add(t_id)
+                    else:
+                        logger.info(f"♻️ Re-queueing Task {t_id} (Reason: Empty completion)")
+                results = valid_results
                 total_processed = len(results)
                 total_passed = sum(1 for item in results if item.get('passed', False))
-                logger.info(f'🔄 Resuming... {total_processed} processed, {total_passed} passed.')
+                logger.info(f'🔄 Resuming... {total_processed} valid items retained.')
         except json.JSONDecodeError:
             logger.warning('⚠️ Result file is corrupt. Starting fresh.')
-
     for idx, item in tqdm(enumerate(dataset), total=len(dataset), desc='Benchmarking'):
         task_id = item.get('task_id')
         if task_id in processed_ids:

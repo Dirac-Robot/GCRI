@@ -34,6 +34,7 @@ def setup_directories():
 
 @scope
 def run_benchmark(config, num_samples=None):
+    config.protocols.force_output = True
     load_dotenv()
     setup_directories()
 
