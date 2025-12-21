@@ -1,11 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   /* Premium Dark Palette */
   --bg-color: #050505;
   --surface-color: rgba(20, 20, 20, 0.7);
   --glass-border: rgba(255, 255, 255, 0.08);
-  
+
   /* Neon Accents */
   --neon-cyan: #00f2ff;
   --neon-purple: #bc13fe;
@@ -13,7 +17,7 @@
   --neon-red: #ff2a2a;
   --text-primary: #ffffff;
   --text-secondary: #a0a0a0;
-  
+
   /* Dimensions & Spacing */
   --header-height: 60px;
   --sidebar-width: 300px;
@@ -25,7 +29,8 @@ body {
   font-family: 'Inter', sans-serif;
   background-color: var(--bg-color);
   color: var(--text-primary);
-  overflow: hidden; /* App handles scrolling */
+  overflow: hidden;
+  /* App handles scrolling */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -34,15 +39,18 @@ body {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  background: var(--bg-color); 
+  background: var(--bg-color);
 }
+
 ::-webkit-scrollbar-thumb {
-  background: var(--glass-border); 
+  background: var(--glass-border);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary); 
+  background: var(--text-secondary);
 }
 
 /* Glassmorphism Utilities */
