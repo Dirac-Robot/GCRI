@@ -21,14 +21,14 @@ def main(config):
             host = dashboard_cfg.get('host', '127.0.0.1')
             port = dashboard_cfg.get('port', 8000)
             url = f"http://{host}:{port}/api/log"
-            
+
             def http_sink(message):
                 try:
                     record = json.loads(message)
                     requests.post(url, json={'record': record}, timeout=0.1)
                 except Exception:
                     pass
-            
+
             logger.add(http_sink, serialize=True, level="INFO")
             logger.info(f"📡 Dashboard Logging Enabled: {url}")
         except Exception as e:
