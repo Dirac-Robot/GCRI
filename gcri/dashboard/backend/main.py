@@ -1,174 +1,173 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 import os
-import sys
-import subprocess
+import asyncio
+import threading
 from loguru import logger
+import pathlib
 
 from gcri.dashboard.backend.manager import manager
 from gcri.config import scope
 from gcri.dashboard.backend.watcher import watcher
+from gcri.graphs.gcri_unit import GCRI
+from gcri.graphs.planner import GCRIMetaPlanner
 
-app = FastAPI(title="GCRI Dashboard")
+
+app = FastAPI(title='GCRI Dashboard')
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For dev, restrict in prod
+    allow_origins=['*'],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=['*'],
+    allow_headers=['*'],
 )
 
-# --- Data Models ---
+gcri_instance: Optional[Any] = None  # GCRI or GCRIMetaPlanner
+execution_lock = threading.Lock()
+main_event_loop = None
+
+
 class LogMessage(BaseModel):
-    """
-    Standard format for logs coming from GCRI agent via HTTP sink.
-    """
     record: Dict[str, Any]
+
 
 class TaskRequest(BaseModel):
     task: str
+    agent_mode: str = 'unit'  # 'unit' or 'planner'
 
-# --- WebSocket Endpoint ---
-@app.websocket("/ws")
+
+@app.websocket('/ws')
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Keep connection alive, maybe receive commands from frontend later
             data = await websocket.receive_text()
-            # Echo or process if needed
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
-# --- API Endpoints ---
-@app.post("/api/log")
+
+def websocket_sink(message):
+    try:
+        import json
+        record = json.loads(message)
+        
+        if main_event_loop and main_event_loop.is_running():
+             asyncio.run_coroutine_threadsafe(
+                 manager.broadcast({'type': 'log', 'data': record.get('record', record)}), 
+                 main_event_loop
+             )
+    except Exception as e:
+        pass
+
+
+@app.post('/api/log')
 async def receive_log(log: LogMessage):
-    """
-    Receives logs/state updates from the GCRI agent process.
-    Broadcasts them to all connected frontend clients via WebSocket.
-    """
-    # Simply broadcast the entire log record structure
-    # The frontend will parse it to update the graph/terminal
-    await manager.broadcast({"type": "log", "data": log.record})
-    return {"status": "ok"}
+    await manager.broadcast({'type': 'log', 'data': log.record})
+    return {'status': 'ok'}
 
-@app.post("/api/run")
-async def run_task(req: TaskRequest):
-    """
-    Spawns a new GCRI agent process with the given task.
-    """
-    task_text = req.task
-    if not task_text:
-        return {"error": "Task cannot be empty"}
 
-    logger.info(f"Received task request: {task_text}")
+@app.post('/api/run')
+async def run_task(task_request: TaskRequest):
+    global gcri_instance
     
-    # Spawn the process
-    try:
-        cmd = [sys.executable, '-m', 'gcri', task_text]
-        subprocess.Popen(cmd, cwd=scope.config.project_dir)
+    if not gcri_instance:
+         # Should not happen as we init attempts to load
+         return {'error': 'GCRI system not initialized.'}
+
+    target_agent = None
+    if task_request.agent_mode == 'planner':
+        if isinstance(gcri_instance, dict) and 'planner' in gcri_instance:
+            target_agent = gcri_instance['planner']
+        else:
+            return {'error': 'Planner agent not available.'}
+    else:
+        if isinstance(gcri_instance, dict) and 'unit' in gcri_instance:
+            target_agent = gcri_instance['unit']
+        else:
+            return {'error': 'Unit agent not available.'}
+    
+    if not task_request.task:
+        return {'error': 'Task cannot be empty'}
         
-        return {"status": "started", "message": f"Task '{task_text[:20]}...' initiated."}
-    except Exception as e:
-        logger.error(f"Failed to spawn task: {e}")
-        return {"error": str(e)}
+    if execution_lock.locked():
+        return {'error': 'Another task is currently running. Please wait.'}
 
-@app.get("/api/file")
-async def get_file_content(path: str):
-    """
-    Returns the content of a file.
-    Security: simplified for local dev, but should check if path is within monitored roots.
-    """
-    if not os.path.exists(path):
-        return {"error": "File not found"}
-    
-    # Security check: ensure path is within monitored directories
-    # Logic: must start with one of the monitored root paths
-    allowed = False
-    
-    # If watcher hasn't started or has no paths, we might need a fallback check 
-    # or just trust the config.
-    allowed_roots = watcher.monitored_paths
-    if not allowed_roots and scope.config.project_dir:
-         allowed_roots = [os.path.abspath(scope.config.project_dir)]
+    logger.info(f'🚀 Integrated Runner received task: {task_request.task} (Mode: {task_request.agent_mode})')
 
-    abs_path = os.path.abspath(path)
-    for root in allowed_roots:
-        if abs_path.startswith(root):
-            allowed = True
-            break
-    
-    if not allowed:
-        return {"error": "Access denied"}
-        
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        return {"content": content}
-    except Exception as e:
-        return {"error": str(e)}
+    def _execute():
+        with execution_lock:
+             try:
+                 # Standardize call
+                 target_agent(task_request.task)
+             except Exception as e:
+                 logger.error(f'Execution failed: {e}')
 
-@app.get("/api/debug_static")
-async def debug_static():
-    import pathlib
-    backend_dir = pathlib.Path(__file__).parent.resolve()
-    frontend_dist_path = backend_dir.parent / "frontend" / "dist"
-    assets_path = frontend_dist_path / "assets"
-    
-    return {
-        "cwd": os.getcwd(),
-        "backend_dir": str(backend_dir),
-        "frontend_dist_path": str(frontend_dist_path),
-        "dist_exists": frontend_dist_path.exists(),
-        "assets_path": str(assets_path),
-        "assets_exists": assets_path.exists(),
-        "assets_content": [p.name for p in assets_path.glob("*")] if assets_path.exists() else [],
-        "root_content": [p.name for p in frontend_dist_path.glob("*")] if frontend_dist_path.exists() else []
-    }
+    asyncio.create_task(run_in_threadpool(_execute))
 
-# --- Startup/Shutdown ---
-@app.on_event("startup")
+    return {'status': 'started', 'message': 'Task execution started in background.'}
+
+
+@app.on_event('startup')
 async def startup_event():
-    # Determine paths to monitor
-    monitoring_paths = scope.config.dashboard.monitor_directories
-    
-    # Default to project directory if not specified
-    if not monitoring_paths and scope.config.project_dir:
-        monitoring_paths = [scope.config.project_dir]
+    global gcri_instance, main_event_loop
+    try:
+        main_event_loop = asyncio.get_running_loop()
         
-    if monitoring_paths:
-        watcher.start(monitoring_paths)
+        logger.info('⚙️ Initializing Unified GCRI Backend...')
+        
+        # Load BOTH agents
+        gcri_instance = {}
+        
+        try:
+            gcri_instance['unit'] = GCRI(scope.config)
+            logger.info('✅ GCRI Unit Instance Ready.')
+        except Exception as e:
+            logger.error(f'❌ Failed to load Unit Agent: {e}')
 
-@app.on_event("shutdown")
+        try:
+            gcri_instance['planner'] = GCRIMetaPlanner(scope.config)
+            logger.info('✅ GCRIMetaPlanner Instance Ready.')
+        except Exception as e:
+             logger.error(f'❌ Failed to load Planner Agent: {e}')
+
+        logger.add(websocket_sink, serialize=True, level='INFO')
+        logger.info('✅ WebSocket Logger Sink Attached.')
+
+        monitoring_paths = scope.config.dashboard.monitor_directories
+        if not monitoring_paths and scope.config.project_dir:
+            monitoring_paths = [scope.config.project_dir]
+        if monitoring_paths:
+            watcher.start(monitoring_paths)
+            
+    except Exception as e:
+        logger.error(f'❌ Failed to initialize backend components: {e}')
+
+
+@app.on_event('shutdown')
 async def shutdown_event():
     watcher.stop()
 
-# --- Static Files ---
-import pathlib
 
-# Resolve paths relative to this file
 backend_dir = pathlib.Path(__file__).parent.resolve()
-project_root = backend_dir.parent.parent.parent # Adjust based on actual structure
-frontend_dist_path = backend_dir.parent / "frontend" / "dist"
+frontend_dist_path = backend_dir.parent / 'frontend' / 'dist'
 
-logger.info(f"Frontend Dist Path: {frontend_dist_path}")
+logger.info(f'Frontend Dist Path: {frontend_dist_path}')
 
 if frontend_dist_path.exists():
-    # Explicitly mount assets
-    assets_path = frontend_dist_path / "assets"
+    assets_path = frontend_dist_path / 'assets'
     if assets_path.exists():
-        logger.info(f"Mounting assets from: {assets_path}")
-        app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
+        logger.info(f'Mounting assets from: {assets_path}')
+        app.mount('/assets', StaticFiles(directory=str(assets_path)), name='assets')
     
-    logger.info(f"Mounting root static files from: {frontend_dist_path}")
-    app.mount("/", StaticFiles(directory=str(frontend_dist_path), html=True), name="frontend")
+    logger.info(f'Mounting root static files from: {frontend_dist_path}')
+    app.mount('/', StaticFiles(directory=str(frontend_dist_path), html=True), name='frontend')
 else:
-    logger.warning(f"Frontend build directory not found at: {frontend_dist_path}")
-    # Fallback/Dev message if built files are missing
-    @app.get("/")
+    logger.warning(f'Frontend build directory not found at: {frontend_dist_path}')
+    @app.get('/')
     def read_root():
-        return {"message": "GCRI Dashboard Backend is running. Frontend build not found."}
+        return {'message': 'GCRI Dashboard Backend is running. Frontend build not found.'}

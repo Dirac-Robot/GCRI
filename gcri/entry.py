@@ -11,50 +11,48 @@ from gcri.main_planner import main as run_planner
 def launch_dashboard(config):
     dashboard_cfg = getattr(config, 'dashboard', {})
     if not dashboard_cfg.get('enabled', False):
-        return None
+        logger.error("Dashboard is disabled in config.")
+        return
 
     host = dashboard_cfg.get('host', '127.0.0.1')
     port = str(dashboard_cfg.get('port', 8000))
     frontend_url = dashboard_cfg.get('frontend_url', f'http://{host}:{port}')
-
-    # Path to dashboard backend main module
-    # Assuming running from project root where GCRI package is located
-    # We need to run uvicorn as a module.
-    # "GCRI/dashboard/backend/main.py" -> "dashboard.backend.main:app"
-    # usage: python -m uvicorn ...
     
     logger.info(f"🚀 Launching GCRI Dashboard at {frontend_url}...")
     
-    # We must ensure the current directory allows importing 'dashboard'
     env = os.environ.copy()
     project_root = config.project_dir
-    # Add 'GCRI' to pythonpath if needed? 
-    # Actually, dashboard is in GCRI/dashboard. if we run from GCRI/, 'dashboard' is top level provided we have __init__.py or namespace package.
-    # But dashboard is NOT a package unless I added __init__.py.
-    # I should add __init__.py to dashboard and dashboard/backend.
 
-    process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "gcri.dashboard.backend.main:app", "--host", host, "--port", port],
-        cwd=project_root, # Run from project root
-        env=env,
-        # stderr=subprocess.DEVNULL, # Let it print to console for debugging
-        # stdout=subprocess.DEVNULL 
-    )
-    time.sleep(1) # Give it a moment
-    return process
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "uvicorn", "gcri.dashboard.backend.main:app", "--host", host, "--port", port],
+            cwd=project_root,
+            env=env
+        )
+    except KeyboardInterrupt:
+        logger.info("🛑 Dashboard stopped.")
 
 
 @scope
-def cli_entry(config):
-    dashboard_process = launch_dashboard(config)
+def main_entry(config):
+    args = sys.argv[1:]
 
-    try:
-        if len(sys.argv) > 1 and sys.argv[1] == 'plan':
-            sys.argv.pop(1)
+    # gcri cli ...
+    if args and args[0] == 'cli':
+        args.pop(0) # remove 'cli'
+        # Adjust sys.argv so internal parsers work if needed
+        sys.argv.pop(1) 
+        
+        # gcri cli plan
+        if args and args[0] == 'plan':
+            # run_planner usually doesn't take args for 'plan' keyword but let's be safe
+            # sys.argv is now ['gcri', 'plan', ...]
             run_planner()
         else:
+            # gcri cli
             run_unit()
-    finally:
-        if dashboard_process:
-            logger.info("🛑 Shutting down dashboard...")
-            dashboard_process.terminate()
+    
+    # gcri ... (Web Mode)
+    else:
+        # Ignore args for now, just launch dashboard
+        launch_dashboard(config)

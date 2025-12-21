@@ -65,7 +65,7 @@ include-package-data = true
 where = ["."]
 
 [project.scripts]
-gcri = "gcri.entry:cli_entry"
+gcri = "gcri.entry:main_entry"
 
 [tool.setuptools.package-data]
 "gcri" = ["templates/**/*", "dashboard/frontend/dist/**/*"]

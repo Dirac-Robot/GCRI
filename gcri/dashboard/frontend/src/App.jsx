@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Terminal, Activity, Server, Database, GitMerge, Play } from 'lucide-react';
 import GraphVisualizer from './components/GraphVisualizer';
 import LogStream from './components/LogStream';
+import PlanningVisualizer from './components/PlanningVisualizer';
 import { GraphEngine } from './utils/GraphEngine';
 import './index.css';
 
@@ -9,6 +10,7 @@ import './index.css';
 
 const TaskModal = ({ onClose }) => {
   const [task, setTask] = useState('');
+  const [agentMode, setAgentMode] = useState('unit'); // 'unit' or 'planner'
   const [status, setStatus] = useState('idle'); // idle, loading, success, error
 
   const handleSubmit = async (e) => {
@@ -20,7 +22,7 @@ const TaskModal = ({ onClose }) => {
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task })
+        body: JSON.stringify({ task, agent_mode: agentMode })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -44,13 +46,32 @@ const TaskModal = ({ onClose }) => {
         <div className="p-6">
           {status === 'success' ? (
             <div className="text-center py-8 text-[var(--neon-green)] font-bold animate-pulse">
-              COMMAND ACCEPTED. INITIALIZING AGENTS...
+              COMMAND ACCEPTED. INITIALIZING {agentMode === 'unit' ? 'UNIT AGENT' : 'META PLANNER'}...
             </div>
           ) : (
             <form onSubmit={handleSubmit}>
+
+              {/* Agent Mode Selector */}
+              <div className="flex bg-[#111] p-1 rounded mb-4 border border-[#333]">
+                <button
+                  type="button"
+                  onClick={() => setAgentMode('unit')}
+                  className={`flex-1 py-2 text-xs font-bold tracking-wider rounded transition-all ${agentMode === 'unit' ? 'bg-[var(--neon-green)] text-black shadow-[0_0_10px_rgba(0,255,0,0.3)]' : 'text-gray-500 hover:text-white'}`}
+                >
+                  UNIT AGENT
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAgentMode('planner')}
+                  className={`flex-1 py-2 text-xs font-bold tracking-wider rounded transition-all ${agentMode === 'planner' ? 'bg-[var(--neon-cyan)] text-black shadow-[0_0_10px_rgba(0,255,255,0.3)]' : 'text-gray-500 hover:text-white'}`}
+                >
+                  META PLANNER
+                </button>
+              </div>
+
               <textarea
                 className="w-full bg-[#050505] border border-[#333] rounded p-3 text-white font-mono text-sm focus:border-[var(--neon-green)] focus:outline-none transition-colors h-32 resize-none"
-                placeholder="Describe the objective for the agent swarm..."
+                placeholder={agentMode === 'unit' ? "Describe a specific task for the Unit Agent..." : "Describe a high-level goal for the Meta Planner..."}
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 autoFocus
@@ -60,7 +81,7 @@ const TaskModal = ({ onClose }) => {
                 <button
                   type="submit"
                   disabled={status === 'loading' || !task.trim()}
-                  className="bg-[var(--neon-green)] text-black font-bold px-6 py-2 rounded shadow-[0_0_10px_rgba(0,255,0,0.4)] hover:shadow-[0_0_20px_rgba(0,255,0,0.6)] hover:bg-[#4fff4f] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`font-bold px-6 py-2 rounded shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${agentMode === 'unit' ? 'bg-[var(--neon-green)] text-black hover:bg-[#4fff4f] shadow-[0_0_10px_rgba(0,255,0,0.4)]' : 'bg-[var(--neon-cyan)] text-black hover:bg-[#4fffff] shadow-[0_0_10px_rgba(0,255,255,0.4)]'}`}
                 >
                   {status === 'loading' ? 'TRANSMITTING...' : 'EXECUTE'}
                 </button>
@@ -174,6 +195,7 @@ const DetailsModal = ({ data, files, onClose }) => {
 const App = () => {
   const [logs, setLogs] = useState([]);
   const [engineState, setEngineState] = useState(new GraphEngine().state);
+  const [plannerState, setPlannerState] = useState(null); // New Planner State
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [selectedNode, setSelectedNode] = useState(null);
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
@@ -206,6 +228,9 @@ const App = () => {
           handleLogMessage(message.data);
         } else if (message.type === 'workspace_update') {
           setWorkspaceFiles(message.data);
+        } else if (message.type === 'planner_state') {
+          // Handle Planner State Update
+          setPlannerState(message.data);
         }
       };
     };
@@ -270,6 +295,9 @@ const App = () => {
 
       {/* Main Layout */}
       <main className="flex-1 flex overflow-hidden relative z-10">
+
+        {/* Left: Planning Visualizer */}
+        <PlanningVisualizer plannerState={plannerState} />
 
         {/* Center: Dynamic Graph */}
         <div className="flex-1 relative flex flex-col">
