@@ -215,9 +215,14 @@ const App = () => {
   }, []);
 
   const handleLogMessage = (record) => {
+    if (!record) return;
     setLogs((prev) => [...prev, record]);
-    const newState = engine.process(record);
-    setEngineState(newState);
+    try {
+      const newState = engine.process(record);
+      setEngineState(newState);
+    } catch (e) {
+      console.error("Engine process error", e);
+    }
   };
 
   return (

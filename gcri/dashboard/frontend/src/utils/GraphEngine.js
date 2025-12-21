@@ -20,8 +20,9 @@ export class GraphEngine {
     }
 
     process(log) {
-        // Loguru serialized JSON has structure: { text: "...", record: { message: "...", ... } }
         // We handle both nested and flat structures for robustness.
+        if (!log) return { ...this.state };
+
         const msg = log.record?.message || log.message || "";
 
         if (!msg) return { ...this.state };
