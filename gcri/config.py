@@ -112,7 +112,8 @@ def default(config):
     config.dashboard = dict(
         enabled=True,
         host='127.0.0.1',
-        port=8000
+        port=8000,
+        monitor_directories=[]  # User can override this with paths to watch
     )
 
 

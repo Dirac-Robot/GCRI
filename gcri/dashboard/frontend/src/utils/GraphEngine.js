@@ -47,20 +47,29 @@ export class GraphEngine {
             }
         }
 
-        // 3. Branch Execution (Hypothesis -> Reasoning -> Verification)
-        // Log pattern: "Iter #1 | Request sampling hypothesis for strategy #1..."
+        // 3. Branch Execution & Log Routing
+        // Use heuristics to attribute logs to specific branches for the detail view
+        let branchIdx = -1;
+        const branchMatch = msg.match(/Branch #(\d+)|hypothesis #(\d+)|strategy #(\d+)/i);
+        if (branchMatch) {
+            // logical index is 0-based
+            branchIdx = parseInt(branchMatch[1] || branchMatch[2] || branchMatch[3]) - 1;
+        }
+
+        if (branchIdx >= 0 && this.state.branches[branchIdx]) {
+            this.state.branches[branchIdx].logs.push(msg); // Store log in branch history
+        }
+
+        // Logic for stepping phase
         if (msg.includes('Request sampling hypothesis')) {
             this.state.phase = 'execution';
-            const match = msg.match(/strategy #(\d+)/);
-            if (match) this._updateBranch(match[1], 'hypothesis');
+            if (branchIdx >= 0) this._updateBranch(branchIdx, 'hypothesis');
         }
         else if (msg.includes('Request reasoning and refining')) {
-            const match = msg.match(/hypothesis #(\d+)/);
-            if (match) this._updateBranch(match[1], 'reasoning');
+            if (branchIdx >= 0) this._updateBranch(branchIdx, 'reasoning');
         }
         else if (msg.includes('Request verifying')) {
-            const match = msg.match(/hypothesis #(\d+)/);
-            if (match) this._updateBranch(match[1], 'verification');
+            if (branchIdx >= 0) this._updateBranch(branchIdx, 'verification');
         }
 
         // 4. Decision
@@ -85,8 +94,7 @@ export class GraphEngine {
         return { ...this.state }; // Return immutable copy for React
     }
 
-    _updateBranch(idxStr, step) {
-        const idx = parseInt(idxStr) - 1;
+    _updateBranch(idx, step) {
         if (this.state.branches[idx]) {
             this.state.branches[idx].step = step;
             this.state.branches[idx].status = 'active';
