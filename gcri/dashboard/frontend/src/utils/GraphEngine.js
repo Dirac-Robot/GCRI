@@ -20,7 +20,11 @@ export class GraphEngine {
     }
 
     process(log) {
-        const msg = log.message;
+        // Loguru serialized JSON has structure: { text: "...", record: { message: "...", ... } }
+        // We handle both nested and flat structures for robustness.
+        const msg = log.record?.message || log.message || "";
+
+        if (!msg) return { ...this.state };
 
         // 1. Iteration Start / Task
         if (msg.includes('Starting Iteration')) {
