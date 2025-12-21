@@ -130,18 +130,26 @@ async def shutdown_event():
     watcher.stop()
 
 # --- Static Files ---
-# Mount frontend build directory.
-frontend_dist_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+import pathlib
 
-if os.path.exists(frontend_dist_path):
-    # Determine the assets directory
-    assets_path = os.path.join(frontend_dist_path, "assets")
-    if os.path.exists(assets_path):
-         app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+# Resolve paths relative to this file
+backend_dir = pathlib.Path(__file__).parent.resolve()
+project_root = backend_dir.parent.parent.parent # Adjust based on actual structure
+frontend_dist_path = backend_dir.parent / "frontend" / "dist"
 
-    # Mount the root to serve index.html and other files
-    app.mount("/", StaticFiles(directory=frontend_dist_path, html=True), name="frontend")
+logger.info(f"Frontend Dist Path: {frontend_dist_path}")
+
+if frontend_dist_path.exists():
+    # Explicitly mount assets
+    assets_path = frontend_dist_path / "assets"
+    if assets_path.exists():
+        logger.info(f"Mounting assets from: {assets_path}")
+        app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
+    
+    logger.info(f"Mounting root static files from: {frontend_dist_path}")
+    app.mount("/", StaticFiles(directory=str(frontend_dist_path), html=True), name="frontend")
 else:
+    logger.warning(f"Frontend build directory not found at: {frontend_dist_path}")
     # Fallback/Dev message if built files are missing
     @app.get("/")
     def read_root():
