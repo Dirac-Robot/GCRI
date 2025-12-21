@@ -34,11 +34,11 @@ def launch_dashboard(config):
     # I should add __init__.py to dashboard and dashboard/backend.
 
     process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "gcri.dashboard.backend.main:app", "--host", host, "--port", port, "--log-level", "error"],
+        [sys.executable, "-m", "uvicorn", "gcri.dashboard.backend.main:app", "--host", host, "--port", port],
         cwd=project_root, # Run from project root
         env=env,
-        stderr=subprocess.DEVNULL, # Suppress uvicorn logs in main terminal
-        stdout=subprocess.DEVNULL
+        # stderr=subprocess.DEVNULL, # Let it print to console for debugging
+        # stdout=subprocess.DEVNULL 
     )
     time.sleep(1) # Give it a moment
     return process

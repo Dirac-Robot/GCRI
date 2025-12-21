@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Dict, Any, Optional
 import os
 
-from dashboard.backend.manager import manager
+from gcri.dashboard.backend.manager import manager
 
 app = FastAPI(title="GCRI Dashboard")
 
