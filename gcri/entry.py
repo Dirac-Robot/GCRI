@@ -44,8 +44,8 @@ def launch_dashboard(config):
     return process
 
 
-def cli_entry():
-    config = scope()
+@scope
+def cli_entry(config):
     dashboard_process = launch_dashboard(config)
 
     try:
