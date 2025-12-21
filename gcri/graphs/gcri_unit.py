@@ -394,7 +394,7 @@ class GCRI:
             'feedback': integrated_feedback
         }
 
-    def __call__(self, task, initial_memory=None, auto_commit=False):
+    def __call__(self, task, initial_memory=None, commit_mode='manual'):
         self.sandbox.setup()
         feedback = ''
         memory = initial_memory if initial_memory is not None else StructuredMemory()
@@ -440,7 +440,20 @@ class GCRI:
                         winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
                         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
                         logger.info(f'📂 Location: {winning_branch_path}')
-                        if auto_commit or get_input('Apply this result to project root? (y/n): ').lower() == 'y':
+                        match commit_mode:
+                            case 'manual':
+                                accept_commit = get_input('Apply this result to project root? (y/n): ').lower() == 'y'
+                            case 'auto-accept':
+                                accept_commit = True
+                            case 'auto-reject':
+                                accept_commit = False
+                            case _:
+                                logger.warning(
+                                    f'Unknown commit mode: {commit_mode}; '
+                                    f'Fallback to discarding changes.'
+                                )
+                                accept_commit = False
+                        if accept_commit:
                             self.sandbox.commit_winning_branch(winning_branch_path)
                         else:
                             logger.info('Changes discarded.')
