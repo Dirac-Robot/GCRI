@@ -134,6 +134,12 @@ async def shutdown_event():
 frontend_dist_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 
 if os.path.exists(frontend_dist_path):
+    # Determine the assets directory
+    assets_path = os.path.join(frontend_dist_path, "assets")
+    if os.path.exists(assets_path):
+         app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+    # Mount the root to serve index.html and other files
     app.mount("/", StaticFiles(directory=frontend_dist_path, html=True), name="frontend")
 else:
     # Fallback/Dev message if built files are missing
