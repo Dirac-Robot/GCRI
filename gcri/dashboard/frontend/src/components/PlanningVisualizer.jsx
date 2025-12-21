@@ -1,13 +1,51 @@
-import React, { useState } from 'react';
-import { Target, List, Brain, ChevronDown, ChevronRight, CheckCircle, Smartphone, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Target, List, Brain, ChevronDown, ChevronRight, CheckCircle, Smartphone, AlertCircle, ChevronLeft, FastForward } from 'lucide-react';
 
-const PlanningVisualizer = ({ plannerState }) => {
+const PlanningVisualizer = ({ history }) => {
     const [isMemoryCollapsed, setIsMemoryCollapsed] = useState(false);
     const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(false);
+    const [selectedIndex, setSelectedIndex] = useState(-1); // -1 means latest
+    const [autoFollow, setAutoFollow] = useState(true);
+
+    const latestIndex = history ? history.length - 1 : -1;
+    const currentIndex = selectedIndex === -1 ? latestIndex : selectedIndex;
+    const plannerState = history && history.length > 0 ? history[currentIndex] : null;
+
+    useEffect(() => {
+        if (autoFollow) {
+            setSelectedIndex(-1);
+        }
+    }, [history?.length, autoFollow]);
+
+    const handlePrev = () => {
+        if (currentIndex > 0) {
+            setSelectedIndex(currentIndex - 1);
+            setAutoFollow(false);
+        }
+    };
+
+    const handleNext = () => {
+        if (currentIndex < latestIndex) {
+            setSelectedIndex(currentIndex + 1);
+            if (currentIndex + 1 === latestIndex) {
+                setAutoFollow(true);
+            }
+        }
+    };
+
+    const handleSliderChange = (e) => {
+        const val = parseInt(e.target.value);
+        setSelectedIndex(val);
+        if (val === latestIndex) {
+            setAutoFollow(true);
+        } else {
+            setAutoFollow(false);
+        }
+    };
 
     if (!plannerState) {
         return (
-            <div className="h-full flex flex-col items-center justify-center text-[var(--text-secondary)] bg-[rgba(0,0,0,0.2)] p-6 text-center border-r border-[var(--glass-border)]">
+            <div className="h-full flex flex-col items-center justify-center text-[var(--text-secondary)] bg-[rgba(0,0,0,0.2)] p-6 text-center border-r border-[var(--glass-border)] w-[400px]">
                 <Target size={48} className="mb-4 opacity-20" />
                 <div className="text-sm">Planner Inactive</div>
                 <div className="text-xs opacity-50 mt-2">Start a "Meta Planner" task to activate strategic view.</div>
@@ -20,6 +58,51 @@ const PlanningVisualizer = ({ plannerState }) => {
 
     return (
         <div className="h-full flex flex-col bg-[rgba(5,5,5,0.95)] border-r border-[var(--glass-border)] w-[400px] overflow-hidden backdrop-blur-xl">
+
+            {/* Navigation Header */}
+            <div className="p-2 border-b border-[var(--glass-border)] bg-[rgba(0,0,0,0.3)] flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs px-2">
+                    <button
+                        onClick={handlePrev}
+                        disabled={currentIndex <= 0}
+                        className="p-1 hover:bg-[rgba(255,255,255,0.1)] rounded disabled:opacity-30 transition-colors"
+                    >
+                        <ChevronLeft size={16} />
+                    </button>
+
+                    <div className="font-mono text-[var(--neon-green)] flex flex-col items-center">
+                        <span className="font-bold">STEP {currentIndex + 1} / {history.length}</span>
+                        <span className="text-[9px] opacity-70 uppercase tracking-widest">{stage}</span>
+                    </div>
+
+                    <button
+                        onClick={handleNext}
+                        disabled={currentIndex >= latestIndex}
+                        className="p-1 hover:bg-[rgba(255,255,255,0.1)] rounded disabled:opacity-30 transition-colors"
+                    >
+                        <ChevronRight size={16} />
+                    </button>
+                </div>
+
+                {/* Slider */}
+                <div className="px-2 flex items-center gap-2">
+                    <input
+                        type="range"
+                        min="0"
+                        max={latestIndex}
+                        value={currentIndex}
+                        onChange={handleSliderChange}
+                        className="w-full h-1 bg-[#333] rounded-lg appearance-none cursor-pointer accent-[var(--neon-green)]"
+                    />
+                    <button
+                        onClick={() => { setSelectedIndex(-1); setAutoFollow(true); }}
+                        className={`p-1 rounded transition-colors ${autoFollow ? 'text-[var(--neon-green)] bg-[rgba(0,255,0,0.1)]' : 'text-gray-500 hover:text-white'}`}
+                        title="Auto-follow latest"
+                    >
+                        <FastForward size={14} />
+                    </button>
+                </div>
+            </div>
 
             {/* Header / Goal */}
             <div className="p-4 border-b border-[var(--glass-border)] bg-[rgba(255,255,255,0.02)]">
@@ -41,9 +124,6 @@ const PlanningVisualizer = ({ plannerState }) => {
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-xs font-bold text-[var(--neon-green)] flex items-center gap-2">
                                 <Smartphone size={14} className="animate-pulse" /> CURRENT EXECUTION (Iter #{plan_count})
-                            </span>
-                            <span className="text-[10px] uppercase font-mono bg-[rgba(0,255,0,0.1)] text-[var(--neon-green)] px-2 py-0.5 rounded border border-[var(--neon-green)] opacity-70">
-                                {stage || 'IDLE'}
                             </span>
                         </div>
                         {current_task ? (

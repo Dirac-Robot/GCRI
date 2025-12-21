@@ -195,7 +195,7 @@ const DetailsModal = ({ data, files, onClose }) => {
 const App = () => {
   const [logs, setLogs] = useState([]);
   const [engineState, setEngineState] = useState(new GraphEngine().state);
-  const [plannerState, setPlannerState] = useState(null); // New Planner State
+  const [plannerHistory, setPlannerHistory] = useState([]); // Array of states
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [selectedNode, setSelectedNode] = useState(null);
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
@@ -229,8 +229,15 @@ const App = () => {
         } else if (message.type === 'workspace_update') {
           setWorkspaceFiles(message.data);
         } else if (message.type === 'planner_state') {
-          // Handle Planner State Update
-          setPlannerState(message.data);
+          // Accumulate history
+          setPlannerHistory(prev => {
+            const newState = message.data;
+            // Optional: Reset if we see a 'start' stage at 0? 
+            if (newState.stage === 'start' && newState.plan_count === 0) {
+              return [newState];
+            }
+            return [...prev, newState];
+          });
         }
       };
     };
@@ -297,7 +304,7 @@ const App = () => {
       <main className="flex-1 flex overflow-hidden relative z-10">
 
         {/* Left: Planning Visualizer */}
-        <PlanningVisualizer plannerState={plannerState} />
+        <PlanningVisualizer history={plannerHistory} />
 
         {/* Center: Dynamic Graph */}
         <div className="flex-1 relative flex flex-col">
