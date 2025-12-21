@@ -12,6 +12,8 @@ wheels/
 .env
 .python-version
 .idea/
+.DS_Store
+**/.DS_Store
 
 # Logs and temporary data
 gcri_logs/
