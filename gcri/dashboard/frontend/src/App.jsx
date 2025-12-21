@@ -5,6 +5,74 @@ import LogStream from './components/LogStream';
 import { GraphEngine } from './utils/GraphEngine';
 import './index.css';
 
+// --- Components ---
+
+const TaskModal = ({ onClose }) => {
+  const [task, setTask] = useState('');
+  const [status, setStatus] = useState('idle'); // idle, loading, success, error
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!task.trim()) return;
+
+    setStatus('loading');
+    try {
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setStatus('success');
+      setTimeout(onClose, 1000);
+    } catch (err) {
+      console.error(err);
+      setStatus('error');
+    }
+  };
+
+  return (
+    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-[rgba(0,0,0,0.8)] backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-[#0a0a0a] border border-[var(--neon-green)] w-full max-w-lg rounded-xl overflow-hidden shadow-[0_0_30px_rgba(0,255,0,0.2)]" onClick={e => e.stopPropagation()}>
+        <div className="p-6 border-b border-[#333] bg-[rgba(255,255,255,0.03)] flex justify-between items-center">
+          <h2 className="text-lg font-bold text-[var(--neon-green)] flex items-center gap-2">
+            <Play size={18} /> INITIATE NEW PROTOCOL
+          </h2>
+          <button onClick={onClose} className="text-white hover:text-[var(--neon-red)]">&times;</button>
+        </div>
+        <div className="p-6">
+          {status === 'success' ? (
+            <div className="text-center py-8 text-[var(--neon-green)] font-bold animate-pulse">
+              COMMAND ACCEPTED. INITIALIZING AGENTS...
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              <textarea
+                className="w-full bg-[#050505] border border-[#333] rounded p-3 text-white font-mono text-sm focus:border-[var(--neon-green)] focus:outline-none transition-colors h-32 resize-none"
+                placeholder="Describe the objective for the agent swarm..."
+                value={task}
+                onChange={(e) => setTask(e.target.value)}
+                autoFocus
+              />
+              <div className="flex justify-between items-center mt-4">
+                <span className="text-xs text-gray-500">{status === 'error' && <span className="text-[var(--neon-red)]">Command Failed. Check console.</span>}</span>
+                <button
+                  type="submit"
+                  disabled={status === 'loading' || !task.trim()}
+                  className="bg-[var(--neon-green)] text-black font-bold px-6 py-2 rounded shadow-[0_0_10px_rgba(0,255,0,0.4)] hover:shadow-[0_0_20px_rgba(0,255,0,0.6)] hover:bg-[#4fff4f] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {status === 'loading' ? 'TRANSMITTING...' : 'EXECUTE'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const DetailsModal = ({ data, files, onClose }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -101,11 +169,15 @@ const DetailsModal = ({ data, files, onClose }) => {
   );
 };
 
+// --- Main App ---
+
 const App = () => {
   const [logs, setLogs] = useState([]);
   const [engineState, setEngineState] = useState(new GraphEngine().state);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [selectedNode, setSelectedNode] = useState(null);
+  const [workspaceFiles, setWorkspaceFiles] = useState([]);
+  const [showTaskModal, setShowTaskModal] = useState(false);
 
   const engine = useMemo(() => new GraphEngine(), []);
   const wsRef = useRef(null);
@@ -127,9 +199,7 @@ const App = () => {
         setConnectionStatus('disconnected');
         setTimeout(connect, 3000);
       };
-      const [workspaceFiles, setWorkspaceFiles] = useState([]);
 
-      // ... (inside useEffect ws.onmessage)
       ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
         if (message.type === 'log') {
@@ -153,6 +223,7 @@ const App = () => {
   return (
     <div className="flex flex-col h-screen bg-[#050505] text-white overflow-hidden font-mono selection:bg-[var(--neon-cyan)] selection:text-black relative">
       <DetailsModal data={selectedNode} files={workspaceFiles} onClose={() => setSelectedNode(null)} />
+      {showTaskModal && <TaskModal onClose={() => setShowTaskModal(false)} />}
 
       {/* HUD Overlay Grid */}
       <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none z-0"></div>
@@ -165,8 +236,16 @@ const App = () => {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-[var(--neon-cyan)]">
             <Activity size={20} />
-            <h1 className="font-bold tracking-widest text-lg">GCRI <span className="text-xs opacity-50">CORTEX VISUALIZER v2.1</span></h1>
+            <h1 className="font-bold tracking-widest text-lg">GCRI <span className="text-xs opacity-50">CORTEX VISUALIZER v2.2</span></h1>
           </div>
+
+          <button
+            onClick={() => setShowTaskModal(true)}
+            className="ml-4 flex items-center gap-2 bg-[rgba(0,255,0,0.1)] border border-[var(--neon-green)] text-[var(--neon-green)] px-3 py-1 rounded hover:bg-[var(--neon-green)] hover:text-black transition-all text-xs font-bold shadow-[0_0_10px_rgba(0,255,0,0.2)]"
+          >
+            <Play size={12} /> NEW TASK
+          </button>
+
           <div className="h-6 w-[1px] bg-[var(--glass-border)]"></div>
           <div className="text-xs text-[var(--text-secondary)]">
             ITERATION: <span className="text-white font-bold">{engineState.iteration}</span>
