@@ -112,6 +112,24 @@ async def get_file_content(path: str):
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/debug_static")
+async def debug_static():
+    import pathlib
+    backend_dir = pathlib.Path(__file__).parent.resolve()
+    frontend_dist_path = backend_dir.parent / "frontend" / "dist"
+    assets_path = frontend_dist_path / "assets"
+    
+    return {
+        "cwd": os.getcwd(),
+        "backend_dir": str(backend_dir),
+        "frontend_dist_path": str(frontend_dist_path),
+        "dist_exists": frontend_dist_path.exists(),
+        "assets_path": str(assets_path),
+        "assets_exists": assets_path.exists(),
+        "assets_content": [p.name for p in assets_path.glob("*")] if assets_path.exists() else [],
+        "root_content": [p.name for p in frontend_dist_path.glob("*")] if frontend_dist_path.exists() else []
+    }
+
 # --- Startup/Shutdown ---
 @app.on_event("startup")
 async def startup_event():
