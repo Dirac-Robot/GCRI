@@ -201,9 +201,18 @@ const App = () => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
   const [showTaskModal, setShowTaskModal] = useState(false);
+  const [viewingIterationIndex, setViewingIterationIndex] = useState(null); // null = live, number = viewing history
 
   const engine = useMemo(() => new GraphEngine(), []);
   const wsRef = useRef(null);
+
+  // Determine which state to display
+  const displayState = useMemo(() => {
+    if (viewingIterationIndex !== null && engineState.history && engineState.history[viewingIterationIndex]) {
+      return engineState.history[viewingIterationIndex];
+    }
+    return engineState;
+  }, [viewingIterationIndex, engineState]);
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -227,6 +236,18 @@ const App = () => {
         const message = JSON.parse(event.data);
         if (message.type === 'log') {
           handleLogMessage(message.data);
+        } else if (message.type === 'history') {
+          // Replay all historical logs to restore state
+          console.log(`Restoring state from ${message.data.length} historical logs...`);
+          message.data.forEach(record => {
+            try {
+              engine.process(record);
+            } catch (e) {
+              console.error("Engine process error during replay", e);
+            }
+          });
+          setLogs(message.data);
+          setEngineState({ ...engine.state });
         } else if (message.type === 'workspace_update') {
           setWorkspaceFiles(message.data);
         } else if (message.type === 'planner_state') {
@@ -285,11 +306,48 @@ const App = () => {
           </button>
 
           <div className="h-6 w-[1px] bg-[var(--glass-border)]"></div>
-          <div className="text-xs text-[var(--text-secondary)]">
-            ITERATION: <span className="text-white font-bold">{engineState.iteration}</span>
+
+          {/* Iteration Navigation */}
+          <div className="flex items-center gap-2 text-xs">
+            <button
+              onClick={() => setViewingIterationIndex(prev =>
+                prev === null ? (engineState.history?.length > 0 ? engineState.history.length - 1 : null) : Math.max(0, prev - 1)
+              )}
+              disabled={viewingIterationIndex === 0 || (viewingIterationIndex === null && (!engineState.history || engineState.history.length === 0))}
+              className="px-2 py-1 bg-[rgba(255,255,255,0.05)] border border-[#333] rounded hover:border-[var(--neon-cyan)] disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ◀
+            </button>
+            <div className="text-[var(--text-secondary)] min-w-[80px] text-center">
+              {viewingIterationIndex !== null ? (
+                <span className="text-[var(--neon-yellow)]">VIEWING #{viewingIterationIndex + 1}</span>
+              ) : (
+                <span>ITERATION: <span className="text-white font-bold">{engineState.iteration}</span></span>
+              )}
+            </div>
+            <button
+              onClick={() => setViewingIterationIndex(prev => {
+                if (prev === null) return null;
+                if (prev >= (engineState.history?.length || 0) - 1) return null; // Go to live
+                return prev + 1;
+              })}
+              disabled={viewingIterationIndex === null}
+              className="px-2 py-1 bg-[rgba(255,255,255,0.05)] border border-[#333] rounded hover:border-[var(--neon-cyan)] disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ▶
+            </button>
+            {viewingIterationIndex !== null && (
+              <button
+                onClick={() => setViewingIterationIndex(null)}
+                className="px-2 py-1 bg-[var(--neon-green)] text-black font-bold rounded text-xs hover:shadow-[0_0_10px_var(--neon-green)]"
+              >
+                LIVE
+              </button>
+            )}
           </div>
+
           <div className="text-xs text-[var(--text-secondary)]">
-            PHASE: <span className="text-[var(--neon-purple)] font-bold uppercase">{engineState.phase}</span>
+            PHASE: <span className="text-[var(--neon-purple)] font-bold uppercase">{displayState.phase}</span>
           </div>
         </div>
 
@@ -317,7 +375,7 @@ const App = () => {
           </div>
 
           <div className="flex-1 overflow-hidden relative" id="graph-container">
-            <GraphVisualizer state={engineState} onNodeSelect={setSelectedNode} />
+            <GraphVisualizer state={displayState} onNodeSelect={setSelectedNode} />
           </div>
 
           {/* Bottom Status Bar */}

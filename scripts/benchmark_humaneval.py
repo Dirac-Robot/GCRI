@@ -147,7 +147,7 @@ def run_benchmark(config, num_samples=None):
                 f'Provide the reasoning and the fully functional code implementation.'
             )
             logger.info(f'▶ Running Task: {task_id}')
-            output_state = worker(task_prompt, auto_commit=True)
+            output_state = worker(task_prompt, commit_mode='auto-reject')
             final_output_obj = output_state.get('final_output')
             parsed_code = ''
             parsed_reasoning = ''

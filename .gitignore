@@ -2,7 +2,6 @@
 __pycache__/
 *.py[oc]
 build/
-dist/
 wheels/
 *.egg-info
 
@@ -13,6 +12,8 @@ wheels/
 .env
 .python-version
 .idea/
+.DS_Store
+**/.DS_Store
 
 # Logs and temporary data
 gcri_logs/

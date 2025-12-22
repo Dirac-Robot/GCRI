@@ -24,8 +24,8 @@ LOCAL_DATA_PATH = "data/arc"
 
 # Target Split: 'training' (400 tasks) or 'evaluation' (400 tasks)
 # Note: 'test' is usually private/hidden.
-TARGET_SPLIT = "evaluation"
-BENCHMARK_DIR = 'benchmark_results/arc_agi_1' if TARGET_SPLIT == "training" else "benchmark_results/arc_agi_2"
+TARGET_SPLIT = "training"
+BENCHMARK_DIR = 'benchmark_results/arc_agi_1'
 
 
 @scope
@@ -238,7 +238,7 @@ def run_benchmark(config, num_samples=None):
             )
 
             try:
-                output_state = worker(task_prompt, auto_commit=True)
+                output_state = worker(task_prompt, commit_mode='auto-reject')
                 final_output_obj = output_state.get('final_output')
 
                 parsed_grid = None

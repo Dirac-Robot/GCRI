@@ -109,6 +109,12 @@ def default(config):
     )
     config.project_dir = os.path.abspath(os.getcwd())
     config.run_dir = os.path.join(config.project_dir, '.gcri')
+    config.dashboard = dict(
+        enabled=True,
+        host='127.0.0.1',
+        port=8000,
+        monitor_directories=[]  # User can override this with paths to watch
+    )
 
 
 @scope.observe(default=True, lazy=True)

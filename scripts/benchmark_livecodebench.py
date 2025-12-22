@@ -222,7 +222,7 @@ def run_benchmark(config, num_samples=None):
                 f'Provide the reasoning and the complete, working Python code.'
             )
             logger.info(f'▶ Running Task: {task_id} ({item['difficulty']})')
-            output_state = worker(task_prompt, auto_commit=True)
+            output_state = worker(task_prompt, commit_mode='auto-reject')
 
             # Handle None or non-dict output_state
             if output_state is None or not isinstance(output_state, dict):
