@@ -16,18 +16,16 @@ Then generate up to {num_hypothesis} distinct strategies that represent meaningf
 - Locked Intent: {locked_intent}
 
 [Rules]
-1. **User Intent & Scope Analysis** (CRITICAL Step):
-   - Before defining strictness, analyze the implicit **Scope** and **Expected Output Type** of the task.
-   - Determine if the user wants:
-[Rules]
-0. **User Intent & Scope Analysis** (CRITICAL):
+1. **User Intent & Scope Analysis** (CRITICAL):
     - If `locked_intent` is provided below, you MUST strictly adhere to it. Do NOT re-analyze intent.
-    - If `locked_intent` is NOT provided, analyze implicit Scope/Output Type.
-    - **Constraint**: Do NOT escalate scope. If user asks for research, do NOT propose building/coding unless explicitly asked.
-1. **Strictness Consistency**:
-    - Analyze the implicit strictness of the `task` (Strict logic vs. Creative idea).
-    - The `strictness` field in the output must be one of: 'strict', 'moderate', 'creative'.
-2. **Handling Feedback & Memory**:
+    - If `locked_intent` is NOT provided, analyze the `task` to define the **Exact Deliverable**.
+    - **Goal**: Create a clear specification of what the final output MUST include and what it MUST NOT include.
+    - **Constraint**: Do NOT escalate scope. (e.g., If the user asks for a high-level design, do NOT propose writing full code unless necessary for the design).
+
+2. **Strictness Consistency**:
+   - Analyze the implicit strictness of the `task` (Strict logic vs. Creative idea).
+   - The `strictness` field in the output must be one of: 'strict', 'moderate', 'creative'.
+3. **Handling Feedback & Memory**:
    - If `feedback` is empty, generate strategies solely based on the task.
    - If `feedback` is provided, treat it as HARD CONSTRAINTS:
      (a) **ABSOLUTE CONSTRAINTS**: You MUST NOT violate these rules. If present, you MUST explicitly include them in the `hints` list for the next agent.
@@ -35,7 +33,11 @@ Then generate up to {num_hypothesis} distinct strategies that represent meaningf
      (c) **FEEDBACK FROM LAST ATTEMPT**: You must explicitly address the specific errors mentioned here.
 
 4. **Content Requirements (Fill these in the JSON fields)**:
-   - **intent_analysis**: Briefly summarize what the user *actually* wants vs. what is out of scope. (e.g., "User wants a literature review, not a code implementation.")
+   - **intent_analysis**: Define the precise **Target Artifact** and **Boundaries**. 
+     * Explicitly state what constitutes "success" for this specific task.
+     * List what must be included (Inclusions) and what must be left out (Exclusions).
+     * Example: "User wants a 500-word essay on X. Must include historical context. Must NOT include personal opinion."
+     * Example: "User wants a Python script to scrape X. Must save to CSV. No GUI required."
    - **name**: A short, descriptive title for the strategy.
    - **description**: Explain the reasoning path... (Ensure this matches the `intent_analysis` scope).
    - **name**: A short, descriptive title for the strategy.

@@ -315,9 +315,7 @@ class GCRI:
                 strategy=state.strategy,
                 reasoning=state.reasoning,
                 hypothesis=state.hypothesis,
-                branch_index=state.index,
-                intent_analysis=state.intent_analysis_in_branch,
-                verification_file=f'{state.work_dir}/verification.txt'
+                intent_analysis=state.intent_analysis_in_branch
             )
         for _ in range(self.config.protocols.max_tries_per_agent):
             verification = agent.with_structured_output(schema=Verification).invoke(template)

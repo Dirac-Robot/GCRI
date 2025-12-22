@@ -59,12 +59,21 @@ class Strategies(BaseModel):
 
 
 class Hypothesis(BaseModel):
-    hypothesis: str
+    hypothesis: str = Field(
+        ..., 
+        description='The candidate answer or solution strategy to be evaluated and refined. It represents the core content to be tested against the task requirements.'
+    )
 
 
 class Reasoning(BaseModel):
-    refined_hypothesis: str
-    reasoning: str
+    refined_hypothesis: str = Field(
+        ...,
+        description='A lightly improved version of the hypothesis. It should fix logical flaws and enhance clarity without changing the original solution family or exceeding the scope.'
+    )
+    reasoning: str = Field(
+        ...,
+        description='Detailed evaluation of the hypothesis, strictly identifying strengths, weaknesses, and likely failure points before refinement.'
+    )
 
 
 class Verification(BaseModel):
@@ -72,8 +81,14 @@ class Verification(BaseModel):
         ...,
         description='A specific scenario where the hypothesis fails. Keep it concise (max 3-5 sentences).'
     )
-    counter_strength: Literal['strong', 'moderate', 'weak', 'none']
-    adjustment: str
+    counter_strength: Literal['strong', 'moderate', 'weak', 'none'] = Field(
+        ...,
+        description='The severity of the failure. Use "strong" for execution errors or fatal logic flaws, and "none" if the hypothesis is valid.'
+    )
+    adjustment: str = Field(
+        ...,
+        description='A concise log describing exactly what was changed in the hypothesis and why, to fix the counter-example.'
+    )
     reasoning: str = Field(
         ...,
         description='Analysis of why the counter-example is valid.'

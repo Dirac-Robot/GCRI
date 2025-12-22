@@ -146,65 +146,92 @@ const GraphVisualizer = ({ state, onNodeSelect }) => {
                             </div>
 
                             {/* Hypothesis Node */}
-                            <Node
-                                label={`Branch ${i + 1}`}
-                                subLabel="Hypothesis Agent"
-                                status={branch.step === 'hypothesis' ? 'active' : (branch.step !== 'idle' ? 'done' : 'pending')}
-                                color="var(--neon-green)"
-                                onClick={onNodeSelect}
-                                data={{
-                                    type: 'branch',
-                                    title: `Hypothesis (Branch ${i + 1})`,
-                                    color: 'var(--neon-green)',
-                                    content: getNodeContent(
-                                        branch.step === 'hypothesis' ? 'active' : (branch.step !== 'idle' ? 'done' : 'pending'),
-                                        branch.nodes?.hypothesis,
-                                        branch.logs
-                                    )
-                                }}
-                            />
+                            {(() => {
+                                const hypothesisData = branch.nodes?.hypothesis;
+                                const isHypothesisDone = hypothesisData && hypothesisData.type !== 'processing';
+                                const hypothesisStatus = branch.step === 'hypothesis' && !isHypothesisDone
+                                    ? 'active'
+                                    : (isHypothesisDone || branch.step !== 'idle' ? 'done' : 'pending');
+                                return (
+                                    <Node
+                                        label={`Branch ${i + 1}`}
+                                        subLabel="Hypothesis Agent"
+                                        status={hypothesisStatus}
+                                        color="var(--neon-green)"
+                                        onClick={onNodeSelect}
+                                        data={{
+                                            type: 'branch',
+                                            title: `Hypothesis (Branch ${i + 1})`,
+                                            color: 'var(--neon-green)',
+                                            content: getNodeContent(
+                                                hypothesisStatus,
+                                                hypothesisData,
+                                                branch.logs
+                                            )
+                                        }}
+                                    />
+                                );
+                            })()}
 
                             <Connector vertical active={branch.step === 'reasoning' || branch.step === 'verification'} height={20} />
 
                             {/* Reasoning Node */}
-                            <Node
-                                label="Refiner"
-                                subLabel="Reasoning Agent"
-                                status={branch.step === 'reasoning' ? 'active' : (branch.step === 'verification' ? 'done' : 'pending')}
-                                color="var(--neon-purple)"
-                                onClick={onNodeSelect}
-                                data={{
-                                    type: 'branch',
-                                    title: `Refiner (Branch ${i + 1})`,
-                                    color: 'var(--neon-purple)',
-                                    content: getNodeContent(
-                                        branch.step === 'reasoning' ? 'active' : (branch.step === 'verification' ? 'done' : 'pending'),
-                                        branch.nodes?.reasoning,
-                                        branch.logs
-                                    )
-                                }}
-                            />
+                            {(() => {
+                                const reasoningData = branch.nodes?.reasoning;
+                                const isReasoningDone = reasoningData && reasoningData.type !== 'processing';
+                                const reasoningStatus = branch.step === 'reasoning' && !isReasoningDone
+                                    ? 'active'
+                                    : (isReasoningDone || branch.step === 'verification' || phase === 'decision' || phase === 'memory' ? 'done' : 'pending');
+                                return (
+                                    <Node
+                                        label="Refiner"
+                                        subLabel="Reasoning Agent"
+                                        status={reasoningStatus}
+                                        color="var(--neon-purple)"
+                                        onClick={onNodeSelect}
+                                        data={{
+                                            type: 'branch',
+                                            title: `Refiner (Branch ${i + 1})`,
+                                            color: 'var(--neon-purple)',
+                                            content: getNodeContent(
+                                                reasoningStatus,
+                                                reasoningData,
+                                                branch.logs
+                                            )
+                                        }}
+                                    />
+                                );
+                            })()}
 
                             <Connector vertical active={branch.step === 'verification'} height={20} />
 
                             {/* Verification Node */}
-                            <Node
-                                label="Red Team"
-                                subLabel="Verification Agent"
-                                status={branch.step === 'verification' ? 'active' : 'pending'}
-                                color="var(--neon-red)"
-                                onClick={onNodeSelect}
-                                data={{
-                                    type: 'branch',
-                                    title: `Verification (Branch ${i + 1})`,
-                                    color: 'var(--neon-red)',
-                                    content: getNodeContent(
-                                        branch.step === 'verification' ? 'active' : 'pending',
-                                        branch.nodes?.verification,
-                                        branch.logs
-                                    )
-                                }}
-                            />
+                            {(() => {
+                                const verificationData = branch.nodes?.verification;
+                                const isVerificationDone = verificationData && verificationData.type !== 'processing';
+                                const verificationStatus = branch.step === 'verification' && !isVerificationDone
+                                    ? 'active'
+                                    : (isVerificationDone || phase === 'decision' || phase === 'memory' ? 'done' : 'pending');
+                                return (
+                                    <Node
+                                        label="Red Team"
+                                        subLabel="Verification Agent"
+                                        status={verificationStatus}
+                                        color="var(--neon-red)"
+                                        onClick={onNodeSelect}
+                                        data={{
+                                            type: 'branch',
+                                            title: `Verification (Branch ${i + 1})`,
+                                            color: 'var(--neon-red)',
+                                            content: getNodeContent(
+                                                verificationStatus,
+                                                verificationData,
+                                                branch.logs
+                                            )
+                                        }}
+                                    />
+                                );
+                            })()}
                         </div>
                     )
                 })}
