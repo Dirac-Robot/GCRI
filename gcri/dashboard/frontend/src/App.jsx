@@ -3,6 +3,7 @@ import { Terminal, Activity, Server, Database, GitMerge, Play } from 'lucide-rea
 import GraphVisualizer from './components/GraphVisualizer';
 import LogStream from './components/LogStream';
 import PlanningVisualizer from './components/PlanningVisualizer';
+import StructuredView from './components/StructuredView';
 import { GraphEngine } from './utils/GraphEngine';
 import './index.css';
 
@@ -140,7 +141,7 @@ const DetailsModal = ({ data, files, onClose }) => {
           {activeTab === 'details' && (
             <div className="p-6 overflow-auto font-mono text-sm text-gray-300 whitespace-pre-wrap w-full">
               <h2 className="text-xl font-bold text-[var(--neon-cyan)] mb-4">{data.title}</h2>
-              {data.content || <span className="opacity-50 italic">No content available yet...</span>}
+              <StructuredView data={data.content} />
             </div>
           )}
 

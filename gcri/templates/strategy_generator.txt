@@ -10,14 +10,23 @@ Then generate up to {num_hypothesis} distinct strategies that represent meaningf
 - creative: Tasks prioritizing novelty, rhetorical quality, narrative or conceptual originality over formal correctness (e.g., writing, ideation, worldbuilding).
 
 [Input]
-- task: {task}
-- feedback: {feedback}
+- Task: {task}
+- Feedback: {feedback}
+- Number of Hypothesis to generate: {num_hypothesis}
+- Locked Intent: {locked_intent}
 
 [Rules]
+1. **User Intent & Scope Analysis** (CRITICAL Step):
+   - Before defining strictness, analyze the implicit **Scope** and **Expected Output Type** of the task.
+   - Determine if the user wants:
+[Rules]
+0. **User Intent & Scope Analysis** (CRITICAL):
+    - If `locked_intent` is provided below, you MUST strictly adhere to it. Do NOT re-analyze intent.
+    - If `locked_intent` is NOT provided, analyze implicit Scope/Output Type.
+    - **Constraint**: Do NOT escalate scope. If user asks for research, do NOT propose building/coding unless explicitly asked.
 1. **Strictness Consistency**:
-   - Infer the strictness level from the task.
-   - ALL generated strategies must adhere to this single strictness level. Do NOT vary strictness per strategy.
-
+    - Analyze the implicit strictness of the `task` (Strict logic vs. Creative idea).
+    - The `strictness` field in the output must be one of: 'strict', 'moderate', 'creative'.
 2. **Handling Feedback & Memory**:
    - If `feedback` is empty, generate strategies solely based on the task.
    - If `feedback` is provided, treat it as HARD CONSTRAINTS:
@@ -25,7 +34,10 @@ Then generate up to {num_hypothesis} distinct strategies that represent meaningf
      (b) **STRATEGY GRAVEYARD**: You MUST NOT repeat these failed approaches.
      (c) **FEEDBACK FROM LAST ATTEMPT**: You must explicitly address the specific errors mentioned here.
 
-3. **Content Requirements (Fill these in the JSON fields)**:
+4. **Content Requirements (Fill these in the JSON fields)**:
+   - **intent_analysis**: Briefly summarize what the user *actually* wants vs. what is out of scope. (e.g., "User wants a literature review, not a code implementation.")
+   - **name**: A short, descriptive title for the strategy.
+   - **description**: Explain the reasoning path... (Ensure this matches the `intent_analysis` scope).
    - **name**: A short, descriptive title for the strategy.
    - **description**: Explain the reasoning path. How does this strategy solve the problem? What is the core logic?
    - **feedback_reflection**: Explicitly state:
@@ -38,11 +50,11 @@ Then generate up to {num_hypothesis} distinct strategies that represent meaningf
      * Include any Absolute Constraints here to ensure compliance.
      * [CRITICAL] If the task involves coding or saving data, explicitly add a hint: "You MUST use the `write_file` tool to save your work. Do not just output code in text."
 
-4. **Diversity**: Strategies must differ meaningfully in reasoning style (e.g., constructive vs. adversarial, top-down vs. bottom-up, tool-heavy vs. logic-heavy). Differences in style do NOT justify changing strictness.
+5. **Diversity**: Strategies must differ meaningfully in reasoning style (e.g., constructive vs. adversarial, top-down vs. bottom-up, tool-heavy vs. logic-heavy). Differences in style do NOT justify changing strictness.
 
-5. **Contrarian Strategy**: If the Strategy Graveyard shows multiple failures sharing a common core assumption, generate at least one strategy that challenges that core assumption.
+6. **Contrarian Strategy**: If the Strategy Graveyard shows multiple failures sharing a common core assumption, generate at least one strategy that challenges that core assumption.
 
-6. **Efficiency**:
+7. **Efficiency**:
    - Simple tasks (fact retrieval, basic arithmetic) -> Generate ONLY 1 strategy.
    - Complex tasks -> Generate up to {num_hypothesis} diverse strategies.
 

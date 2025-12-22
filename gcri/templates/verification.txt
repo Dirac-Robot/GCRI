@@ -32,9 +32,10 @@ Definitions:
 - reasoning: prior analysis of strengths/weaknesses. Use it to detect weak spots.
 
 VERY IMPORTANT: Task-driven evaluation
-1) Before you judge anything, extract 3–7 **explicit success criteria** from `task`.
+1) Before you judge anything, extract 3–7 **explicit success criteria** from `task` AND `intent_analysis`.
    - Write them mentally as: “A perfect answer MUST …”
 2) You MUST treat these criteria as the ONLY yardstick for failure.
+   - If `intent_analysis` defines scope as 'Conceptual', do NOT fail the hypothesis for lacking code implementation.
    - If the task does NOT ask for “real-world feasibility” or “policy evaluation”, you MUST NOT evaluate those.
    - For summarization/rewriting, do not judge the content's real-world correctness unless asked.
    You ONLY judge whether the summary satisfies the task instructions.

@@ -17,15 +17,21 @@ Goal:
 2. Decide whether the `aggregated_result` contains ONE SINGLE hypothesis that fully satisfies the user task.
 3. If accepted, identify which branch index holds that solution. If rejected, synthesize a global policy for the next iteration.
 
-Input Data Explanation:
-You will receive `aggregated_result` containing: strategy, hypothesis, counter_example, counter_strength, adjustment.
-You will also receive `file_contexts`, telling you which directory contains the files for each branch (relative to your current location).
+[Input]
+- Task: {task}
+- intent_analysis: {intent_analysis}
+- Branch Evaluations:
+{branch_evaluations}
+- aggregated_result: {aggregated_result}
+- file_contexts: {file_contexts}
+- failure_category_list: {failure_category_list}
 
-Step 1: Branch Analysis (Per Branch)
-Evaluate "Refutation Status":
-- VALID: Hypothesis satisfies task AND resolves counter_example.
-- REFUTED: Fatal flaw remains (or FILE MISSING / CODE FAILS upon check).
-- PARTIALLY_VALID: Core idea good but incomplete.
+[Steps]
+1. **Branch Analysis** (Process EACH branch):
+    - **Refutation Status**:
+        - VALID: Solves the task perfectly w/o major issues.
+        - REFUTED: Fatal flaw, hallucination, or **SCOPE MISMATCH** (e.g., provided code when only text was asked, violating `intent_analysis`).
+        - PARTIALLY_VALID: Good direction but incomplete details.
 Assign "Failure Category" if not VALID: logic_error, req_missing, hallucination, practicality, other.
 
 Step 2: Final Decision (Synthesis)

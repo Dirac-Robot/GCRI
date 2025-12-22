@@ -116,6 +116,50 @@
             "max_recursion_depth": null
           }
         }
+      },
+      {
+        "hypothesis": {
+          "model_id": "openai/gpt-oss-120b",
+          "parameters": {
+            "max_tokens": 76800,
+            "model_provider": "openai",
+            "base_url": "http://localhost:8000/v1",
+            "api_key": "EMPTY"
+          },
+          "gcri_options": {
+            "use_code_tools": true,
+            "use_web_search": true,
+            "max_recursion_depth": null
+          }
+        },
+        "reasoning": {
+          "model_id": "openai/gpt-oss-120b",
+          "parameters": {
+            "max_tokens": 76800,
+            "model_provider": "openai",
+            "base_url": "http://localhost:8000/v1",
+            "api_key": "EMPTY"
+          },
+          "gcri_options": {
+            "use_code_tools": true,
+            "use_web_search": true,
+            "max_recursion_depth": null
+          }
+        },
+        "verification": {
+          "model_id": "openai/gpt-oss-120b",
+          "parameters": {
+            "max_tokens": 76800,
+            "model_provider": "openai",
+            "base_url": "http://localhost:8000/v1",
+            "api_key": "EMPTY"
+          },
+          "gcri_options": {
+            "use_code_tools": true,
+            "use_web_search": true,
+            "max_recursion_depth": null
+          }
+        }
       }
     ],
     "decision": {

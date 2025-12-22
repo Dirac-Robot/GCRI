@@ -53,9 +53,7 @@ dependencies = [
     "urllib3~=2.5.0",
     "xxhash~=3.6.0",
     "zstandard~=0.25.0",
-    "datasets",
-    "fastapi",
-    "uvicorn"
+    "datasets"
 ]
 
 [tool.setuptools]
@@ -65,7 +63,7 @@ include-package-data = true
 where = ["."]
 
 [project.scripts]
-gcri = "gcri.entry:main_entry"
+gcri = "gcri.entry:cli_entry"
 
 [tool.setuptools.package-data]
-"gcri" = ["templates/**/*", "dashboard/frontend/dist/**/*"]
+"gcri" = ["templates/**/*"]

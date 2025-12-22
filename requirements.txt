@@ -77,5 +77,3 @@ langchain-anthropic~=1.2.0
 langchain-google-genai~=4.0.0
 httpx-sse~=0.4.3
 datasets
-fastapi
-uvicorn

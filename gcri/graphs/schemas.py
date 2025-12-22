@@ -1,7 +1,9 @@
 from enum import Enum
-from typing import List, Optional, Any
+from typing import List, Literal
+from typing import Optional, Any
 
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field
+from pydantic import create_model
 
 
 class RefutationStatus(str, Enum):
@@ -26,10 +28,6 @@ class ActiveConstraints(BaseModel):
     )
 
 
-from typing import List, Literal
-from pydantic import BaseModel, Field
-
-
 class Strategy(BaseModel):
     name: str = Field(..., description='A short, descriptive name for this strategy.')
     description: str = Field(..., description='Detailed explanation of the reasoning path and methodology.')
@@ -45,6 +43,14 @@ class Strategy(BaseModel):
 
 
 class Strategies(BaseModel):
+    intent_analysis: Optional[str] = Field(
+        None,
+        description=(
+            'Summarize the user\'s desired scope (e.g., "User wants a review, not code"). '
+            'Analyze implicit Scope/Output Type. '
+            'If locked_intent is provided, this may be omitted.'
+        )
+    )
     strictness: Literal['strict', 'moderate', 'creative'] = Field(
         ...,
         description='The strictness level inferred from the task. Must be applied to all strategies.'
@@ -86,7 +92,7 @@ class BranchAnalysis(BaseModel):
 class DecisionProtoType(BaseModel):
     decision: bool = Field(..., description='Final approval decision (True if at least one is perfect)')
     best_branch_index: Optional[int] = None
-    final_output: Optional[Any] = Field(None, description='The final adopted perfect answer')
+    # final_output: Optional[Any] = Field(None, description='The final adopted perfect answer')
     global_feedback: Optional[str] = Field(
         None,
         description='Strategic direction for the next turn synthesizing all failures'
@@ -97,7 +103,7 @@ class DecisionProtoType(BaseModel):
 class PlanProtoType(BaseModel):
     thought: str = Field(description='Reasoning for the current analysis and plan formulation')
     next_task: Optional[str] = Field(description='Specific single task to be performed next (None if finished)')
-    final_answer: Optional[Any] = Field(description='Final answer if the goal is achieved (None if in progress)')
+    # final_answer: Optional[Any] = Field(description='Final answer if the goal is achieved (None if in progress)')
     is_finished: bool = Field(description='Whether the goal has been achieved')
 
 
@@ -109,7 +115,9 @@ class Compression(BaseModel):
     discard_reason: str = Field(description='Brief reason why certain details were compressed or discarded.')
 
 
-def create_decision_schema(schema):
+def create_decision_schema(schema=None):
+    if schema is None:
+        schema = str
     return create_model(
         'Decision',
         __base__=DecisionProtoType,
@@ -120,7 +128,9 @@ def create_decision_schema(schema):
     )
 
 
-def create_planner_schema(schema):
+def create_planner_schema(schema=None):
+    if schema is None:
+        schema = str
     return create_model(
         'Plan',
         __base__=PlanProtoType,

@@ -54,6 +54,7 @@ class HypothesisResult(BaseModel):
 class TaskState(BaseModel):
     count: int = 0
     task: str
+    intent_analysis: str = ''
     task_strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
     strategies: List[Strategy] = Field(
         default_factory=list,
@@ -72,6 +73,7 @@ class TaskState(BaseModel):
 
 class BranchState(BaseModel):
     task_in_branch: str
+    intent_analysis_in_branch: str = ''
     count_in_branch: int = 0
     strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
     strategy: Strategy

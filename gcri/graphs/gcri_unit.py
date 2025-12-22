@@ -102,6 +102,7 @@ class GCRI:
         return self._workflow
 
     def map_branches(self, state: TaskState):
+        logger.bind(ui_event='phase_change', phase='execution').info('Starting Branch Execution...')
         num_branches = min(len(self.config.agents.branches), len(state.strategies))
         sends = []
 
@@ -117,7 +118,8 @@ class GCRI:
                         'strictness': state.task_strictness,
                         'strategy': state.strategies[index],
                         'feedback': state.feedback,
-                        'work_dir': branch_workspace
+                        'work_dir': branch_workspace,
+                        'intent_analysis_in_branch': state.intent_analysis
                     }
                 )
             )
@@ -137,11 +139,23 @@ class GCRI:
     def sample_strategies(self, state: TaskState):
         logger.info(f'Iter #{state.count+1} | Request generating strategies...')
         template_path = self.config.templates.strategy_generator
+        if state.intent_analysis:
+            locked_intent = state.intent_analysis
+            logger.info(f'Iter #{state.count+1} | Using LOCKED Intent: {locked_intent}')
+        else:
+            locked_intent = 'None (Analyze Fresh)'
+
+        logger.bind(
+            ui_event='node_update',
+            node='strategy',
+            data={'type': 'processing'}
+        ).info('Generating strategies...')
         with open(template_path, 'r') as f:
             template = f.read().format(
                 task=state.task,
                 feedback=state.feedback,
-                num_hypothesis=len(self.config.agents.branches)
+                num_hypothesis=len(self.config.agents.branches),
+                locked_intent=locked_intent
             )
         for _ in range(self.config.protocols.max_tries_per_agent):
             strategies = self.strategy_agent.invoke(template)
@@ -154,7 +168,27 @@ class GCRI:
             )
         for index, strategy in enumerate(strategies.strategies):
             logger.info(f'Iter #{state.count+1} | Sampled strategy #{index+1}: {strategy}')
-        return dict(task_strictness=strategies.strictness, strategies=strategies.strategies)
+
+        current_intent = state.intent_analysis
+        if not current_intent and strategies.intent_analysis:
+            current_intent = strategies.intent_analysis
+            logger.info(f'Iter #{state.count+1} | Intent Locked: {current_intent}')
+
+        logger.bind(
+            ui_event='node_update',
+            node='strategy',
+            data=dict(
+                strategies=strategies.strategies,
+                intent_analysis=current_intent,
+                strictness=strategies.strictness
+            )
+        ).info('Strategies generated.')
+
+        return dict(
+            task_strictness=strategies.strictness,
+            strategies=strategies.strategies,
+            intent_analysis=current_intent
+        )
 
     def sample_hypothesis(self, state: BranchState):
         logger.info(f'Iter #{state.count_in_branch+1} | Request sampling hypothesis for strategy #{state.index+1}...')
@@ -171,7 +205,8 @@ class GCRI:
             template = f.read().format(
                 task=state.task_in_branch,
                 strictness=state.strictness,
-                strategy=state.strategy
+                strategy=state.strategy,
+                intent_analysis=state.intent_analysis_in_branch
             )
         for _ in range(self.config.protocols.max_tries_per_agent):
             hypothesis = agent.with_structured_output(schema=Hypothesis).invoke(template)
@@ -201,7 +236,8 @@ class GCRI:
             template = f.read().format(
                 task=state.task_in_branch,
                 strategy=state.strategy,
-                hypothesis=state.hypothesis
+                hypothesis=state.hypothesis,
+                intent_analysis=state.intent_analysis_in_branch
             )
         for _ in range(self.config.protocols.max_tries_per_agent):
             reasoning = agent.with_structured_output(schema=Reasoning).invoke(template)
@@ -246,13 +282,15 @@ class GCRI:
         )
         template_path = self.config.templates.verification
         with open(template_path, 'r') as f:
-            template = f.read()
-        template = template.format(
-            task=state.task_in_branch,
-            strategy=state.strategy,
-            reasoning=state.reasoning,
-            hypothesis=state.hypothesis
-        )
+            template = f.read().format(
+                task=state.task_in_branch,
+                strategy=state.strategy,
+                reasoning=state.reasoning,
+                hypothesis=state.hypothesis,
+                branch_index=state.index,
+                intent_analysis=state.intent_analysis_in_branch,
+                verification_file=f'{state.work_dir}/verification.txt'
+            )
         for _ in range(self.config.protocols.max_tries_per_agent):
             verification = agent.with_structured_output(schema=Verification).invoke(template)
             if verification is not None:
@@ -287,6 +325,7 @@ class GCRI:
         return '\n'.join(descriptions)
 
     def decide(self, state: TaskState):
+        logger.bind(ui_event='phase_change', phase='decision').info('Starting Decision Phase...')
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
         file_contexts = self.sandbox.get_branch_context(state.count, len(state.results))
         template_path = self.config.templates.decision
@@ -330,7 +369,8 @@ class GCRI:
             aggregated_result=aggregated_result,
             file_contexts=file_contexts,
             failure_category_list=self._get_failure_category_description(),
-            schema_desc=schema_desc
+            schema_desc=schema_desc,
+            intent_analysis=state.intent_analysis
         )
         self.decision_agent.work_dir = self.sandbox.work_dir
         for _ in range(self.config.protocols.max_tries_per_agent):
@@ -342,7 +382,11 @@ class GCRI:
                 f'Agent could not generate decision '
                 f'for {self.config.protocols.max_tries_per_agent} times.'
             )
-        logger.info(f'Decision: {decision.decision}')
+        logger.bind(
+            ui_event='node_update',
+            node='decision',
+            data=decision.model_dump() if hasattr(decision, 'model_dump') else decision
+        ).info(f'Decision: {decision.decision}')
         if decision.decision:
             logger.info(f'Selected Best Branch Index: {decision.best_branch_index+1}')
         else:
@@ -356,6 +400,7 @@ class GCRI:
         }
 
     def update_memory(self, state: TaskState):
+        logger.bind(ui_event='phase_change', phase='memory').info('Updating Memory...')
         current_memory = state.memory
         memory_template_path = self.config.templates.memory
         with open(memory_template_path, 'r') as f:
@@ -387,14 +432,18 @@ class GCRI:
             current_set.update(new_constraints)
             current_memory.active_constraints = list(current_set)
         integrated_feedback = current_memory.format_for_strategy(memory_template)
-        logger.info(f'Iter #{state.count+1} | Memory saved:\n{current_memory}')
+        logger.bind(
+            ui_event='node_update',
+            node='memory',
+            data=current_memory.active_constraints
+        ).info(f'Iter #{state.count+1} | Memory saved:\n{current_memory}')
         logger.info(f'Iter #{state.count+1} | Integrated feedback from memorized information:\n{integrated_feedback}')
         return {
             'memory': current_memory,
             'feedback': integrated_feedback
         }
 
-    def __call__(self, task, initial_memory=None, commit_mode='manual'):
+    def __call__(self, task, initial_memory=None, auto_commit=False):
         self.sandbox.setup()
         feedback = ''
         memory = initial_memory if initial_memory is not None else StructuredMemory()
@@ -416,7 +465,11 @@ class GCRI:
             start_index = 0
         try:
             for index in range(start_index, self.config.protocols.max_iterations):
-                logger.info(f'Starting Iteration {index+1}...')
+                logger.bind(
+                    ui_event='phase_change',
+                    phase='strategy',
+                    iteration=index
+                ).info(f'Starting Iteration {index+1}...')
                 try:
                     result = self.workflow.invoke(
                         {
@@ -440,20 +493,7 @@ class GCRI:
                         winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
                         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
                         logger.info(f'📂 Location: {winning_branch_path}')
-                        match commit_mode:
-                            case 'manual':
-                                accept_commit = get_input('Apply this result to project root? (y/n): ').lower() == 'y'
-                            case 'auto-accept':
-                                accept_commit = True
-                            case 'auto-reject':
-                                accept_commit = False
-                            case _:
-                                logger.warning(
-                                    f'Unknown commit mode: {commit_mode}; '
-                                    f'Fallback to discarding changes.'
-                                )
-                                accept_commit = False
-                        if accept_commit:
+                        if auto_commit or get_input('Apply this result to project root? (y/n): ').lower() == 'y':
                             self.sandbox.commit_winning_branch(winning_branch_path)
                         else:
                             logger.info('Changes discarded.')
