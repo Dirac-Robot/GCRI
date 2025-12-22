@@ -20,7 +20,7 @@ Then generate up to {num_hypothesis} distinct strategies that represent meaningf
    - If `locked_intent` is provided below, you MUST strictly adhere to it. Do NOT re-analyze intent.
    - If `locked_intent` is NOT provided, analyze the `task` to define the **Exact Deliverable**.
    **Goal**:
-   - Create an INITIAL, MINIMAL specification of the final output that is sufficient to begin reasoning.
+   - Create an INITIAL, ESSENTIAL specification of the final output that is sufficient to begin reasoning.
    - Focus on identifying:
      (a) the core artifact type (e.g., explanation, design, implementation, analysis)
      (b) the minimum correctness or usefulness criteria implied by the task
