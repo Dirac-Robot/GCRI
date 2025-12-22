@@ -31,10 +31,7 @@ class GCRIMetaPlanner:
         self.gcri_unit = GCRI(gcri_config, abort_event=abort_event)
         os.makedirs(self.work_dir, exist_ok=True)
         planner_config = config.agents.planner
-        if schema:
-            planner_schema = create_planner_schema(schema=schema)
-        else:
-            planner_schema = PlanProtoType
+        planner_schema = create_planner_schema(schema=schema)
         self._planner_agent = init_chat_model(
             planner_config.model_id,
             **planner_config.parameters

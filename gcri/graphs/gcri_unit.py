@@ -56,11 +56,8 @@ class GCRI:
 
         decision_config = config.agents.decision
 
-        if schema:
-            decision_schema = create_decision_schema(schema=schema)
-            logger.info(f'🔧 Custom output schema applied: {decision_schema.__name__}')
-        else:
-            decision_schema = DecisionProtoType
+        decision_schema = create_decision_schema(schema=schema)
+        logger.info(f'🔧 Custom output schema applied: {decision_schema.__name__}')
 
         decision_agent = build_model(
             decision_config.model_id,
