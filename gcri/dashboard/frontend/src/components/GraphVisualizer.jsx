@@ -116,6 +116,7 @@ const GraphVisualizer = ({ state, onNodeSelect }) => {
                 data={{
                     type: 'strategy',
                     title: 'Strategy Generator',
+                    color: 'var(--neon-cyan)',
                     content: getNodeContent(
                         phase === 'idle' ? 'pending' : (phase === 'strategy' ? 'active' : 'done'),
                         state.strategyData || { strategies: state.strategies },
@@ -154,6 +155,7 @@ const GraphVisualizer = ({ state, onNodeSelect }) => {
                                 data={{
                                     type: 'branch',
                                     title: `Hypothesis (Branch ${i + 1})`,
+                                    color: 'var(--neon-green)',
                                     content: getNodeContent(
                                         branch.step === 'hypothesis' ? 'active' : (branch.step !== 'idle' ? 'done' : 'pending'),
                                         branch.nodes?.hypothesis,
@@ -174,6 +176,7 @@ const GraphVisualizer = ({ state, onNodeSelect }) => {
                                 data={{
                                     type: 'branch',
                                     title: `Refiner (Branch ${i + 1})`,
+                                    color: 'var(--neon-purple)',
                                     content: getNodeContent(
                                         branch.step === 'reasoning' ? 'active' : (branch.step === 'verification' ? 'done' : 'pending'),
                                         branch.nodes?.reasoning,
@@ -194,6 +197,7 @@ const GraphVisualizer = ({ state, onNodeSelect }) => {
                                 data={{
                                     type: 'branch',
                                     title: `Verification (Branch ${i + 1})`,
+                                    color: 'var(--neon-red)',
                                     content: getNodeContent(
                                         branch.step === 'verification' ? 'active' : 'pending',
                                         branch.nodes?.verification,
@@ -240,6 +244,7 @@ const GraphVisualizer = ({ state, onNodeSelect }) => {
                         data={{
                             type: 'decision',
                             title: 'Decision Maker',
+                            color: nodeColor,
                             content: getNodeContent(
                                 phase === 'decision' ? 'active' : (decision ? 'done' : 'pending'),
                                 decision,

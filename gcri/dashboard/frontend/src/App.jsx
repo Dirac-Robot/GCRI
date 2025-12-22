@@ -102,6 +102,8 @@ const DetailsModal = ({ data, files, onClose }) => {
 
   if (!data) return null;
 
+  const nodeColor = data.color || 'var(--neon-cyan)';
+
   const handleFileClick = async (file) => {
     setSelectedFile(file);
     try {
@@ -115,14 +117,15 @@ const DetailsModal = ({ data, files, onClose }) => {
 
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.7)] backdrop-blur-sm p-20" onClick={onClose}>
-      <div className="bg-[#0a0a0a] border border-[var(--neon-cyan)] w-full max-w-5xl h-[80vh] rounded-xl overflow-hidden shadow-[0_0_50px_rgba(0,255,255,0.1)] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-[#0a0a0a] w-full max-w-5xl h-[80vh] rounded-xl overflow-hidden flex flex-col" style={{ border: `1px solid ${nodeColor}`, boxShadow: `0 0 50px ${nodeColor}20` }} onClick={e => e.stopPropagation()}>
 
         {/* Header with Tabs */}
         <div className="flex justify-between items-center px-6 pt-4 border-b border-[#333] bg-[rgba(255,255,255,0.03)]">
           <div className="flex gap-6">
             <button
               onClick={() => setActiveTab('details')}
-              className={`pb-4 text-sm font-bold tracking-wider transition-colors border-b-2 ${activeTab === 'details' ? 'text-[var(--neon-cyan)] border-[var(--neon-cyan)]' : 'text-gray-500 border-transparent hover:text-gray-300'}`}
+              className="pb-4 text-sm font-bold tracking-wider transition-colors border-b-2"
+              style={{ color: activeTab === 'details' ? nodeColor : '#6b7280', borderColor: activeTab === 'details' ? nodeColor : 'transparent' }}
             >
               <div className="flex items-center gap-2"><Activity size={16} /> NODE DETAILS</div>
             </button>
@@ -140,7 +143,7 @@ const DetailsModal = ({ data, files, onClose }) => {
         <div className="flex-1 overflow-hidden flex">
           {activeTab === 'details' && (
             <div className="p-6 overflow-auto font-mono text-sm text-gray-300 whitespace-pre-wrap w-full">
-              <h2 className="text-xl font-bold text-[var(--neon-cyan)] mb-4">{data.title}</h2>
+              <h2 className="text-xl font-bold mb-4" style={{ color: nodeColor }}>{data.title}</h2>
               <StructuredView data={data.content} />
             </div>
           )}
@@ -322,7 +325,7 @@ const App = () => {
               {viewingIterationIndex !== null ? (
                 <span className="text-[var(--neon-yellow)]">VIEWING #{viewingIterationIndex + 1}</span>
               ) : (
-                <span>ITERATION: <span className="text-white font-bold">{engineState.iteration}</span></span>
+                <span>ITERATION: <span className="text-white font-bold">{engineState.iteration + 1}</span></span>
               )}
             </div>
             <button

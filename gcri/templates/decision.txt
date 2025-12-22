@@ -20,8 +20,6 @@ Goal:
 [Input]
 - Task: {task}
 - intent_analysis: {intent_analysis}
-- Branch Evaluations:
-{branch_evaluations}
 - aggregated_result: {aggregated_result}
 - file_contexts: {file_contexts}
 - failure_category_list: {failure_category_list}

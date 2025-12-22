@@ -191,7 +191,12 @@ class GCRI:
         )
 
     def sample_hypothesis(self, state: BranchState):
-        logger.info(f'Iter #{state.count_in_branch+1} | Request sampling hypothesis for strategy #{state.index+1}...')
+        logger.bind(
+            ui_event='node_update',
+            node='hypothesis',
+            branch=state.index,
+            data={'type': 'processing'}
+        ).info(f'Iter #{state.count_in_branch+1} | Sampling hypothesis for strategy #{state.index+1}...')
         work_dir = state.work_dir
         hypothesis_config = self.config.agents.branches[state.index].hypothesis
         agent = build_model(
@@ -218,11 +223,21 @@ class GCRI:
                 f'for {self.config.protocols.max_tries_per_agent} times '
                 f'at strategy #{state.index+1}.'
             )
-        logger.info(f'Iter #{state.count_in_branch+1} | Sampled hypothesis #{state.index+1}: {hypothesis.hypothesis}')
+        logger.bind(
+            ui_event='node_update',
+            node='hypothesis',
+            branch=state.index,
+            data={'hypothesis': hypothesis.hypothesis}
+        ).info(f'Iter #{state.count_in_branch+1} | Sampled hypothesis #{state.index+1}: {hypothesis.hypothesis}')
         return dict(hypothesis=hypothesis.hypothesis)
 
     def reasoning_and_refine(self, state: BranchState):
-        logger.info(f'Iter #{state.count_in_branch+1} | Request reasoning and refining hypothesis #{state.index+1}...')
+        logger.bind(
+            ui_event='node_update',
+            node='reasoning',
+            branch=state.index,
+            data={'type': 'processing'}
+        ).info(f'Iter #{state.count_in_branch+1} | Reasoning and refining hypothesis #{state.index+1}...')
         work_dir = state.work_dir
         reasoning_config = self.config.agents.branches[state.index].reasoning
         agent = build_model(
@@ -249,7 +264,15 @@ class GCRI:
                 f'for {self.config.protocols.max_tries_per_agent} times '
                 f'at hypothesis #{state.index+1}.'
             )
-        logger.info(
+        logger.bind(
+            ui_event='node_update',
+            node='reasoning',
+            branch=state.index,
+            data={
+                'reasoning': reasoning.reasoning,
+                'hypothesis': reasoning.refined_hypothesis
+            }
+        ).info(
             f'Iter #{state.count_in_branch+1} | '
             f'Refined hypothesis #{state.index+1}: {reasoning.refined_hypothesis}'
         )
@@ -271,7 +294,12 @@ class GCRI:
         return self._memory_agent
 
     def verify(self, state: BranchState):
-        logger.info(f'Iter #{state.count_in_branch+1} | Request verifying refined hypothesis #{state.index+1}...')
+        logger.bind(
+            ui_event='node_update',
+            node='verification',
+            branch=state.index,
+            data={'type': 'processing'}
+        ).info(f'Iter #{state.count_in_branch+1} | Verifying refined hypothesis #{state.index+1}...')
         work_dir = state.work_dir
         verification_config = self.config.agents.branches[state.index].verification
         agent = build_model(
@@ -310,7 +338,15 @@ class GCRI:
             counter_strength=verification.counter_strength,
             adjustment=verification.adjustment
         )
-        logger.info(
+        logger.bind(
+            ui_event='node_update',
+            node='verification',
+            branch=state.index,
+            data={
+                'counter_example': verification.counter_example,
+                'counter_strength': verification.counter_strength
+            }
+        ).info(
             f'Iter #{state.count_in_branch+1} | '
             f'Counter-Example of Hypothesis #{state.index+1} (Counter Strength: {verification.counter_strength}): '
             f'{verification.counter_example}'
@@ -391,12 +427,16 @@ class GCRI:
             logger.info(f'Selected Best Branch Index: {decision.best_branch_index+1}')
         else:
             logger.info(f'Feedback: {decision.global_feedback}')
+        # decision can be a pydantic model or a dictionary
+        is_dict = isinstance(decision, dict)
+        get_val = lambda obj, key, default=None: obj.get(key, default) if is_dict else getattr(obj, key, default)
+
         return {
-            'decision': decision.decision,
-            'best_branch_index': decision.best_branch_index,
-            'final_output': decision.final_output,
-            'global_feedback': decision.global_feedback,
-            'branch_evaluations': decision.branch_evaluations
+            'decision': get_val(decision, 'decision'),
+            'best_branch_index': get_val(decision, 'best_branch_index'),
+            'final_output': get_val(decision, 'final_output'),
+            'global_feedback': get_val(decision, 'global_feedback'),
+            'branch_evaluations': get_val(decision, 'branch_evaluations', [])
         }
 
     def update_memory(self, state: TaskState):
