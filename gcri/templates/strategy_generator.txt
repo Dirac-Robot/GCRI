@@ -17,14 +17,28 @@ Then generate up to {num_hypothesis} distinct strategies that represent meaningf
 
 [Rules]
 1. **User Intent & Scope Analysis** (CRITICAL):
-    - If `locked_intent` is provided below, you MUST strictly adhere to it. Do NOT re-analyze intent.
-    - If `locked_intent` is NOT provided, analyze the `task` to define the **Exact Deliverable**.
-    - **Goal**: Create a clear specification of what the final output MUST include and what it MUST NOT include.
-    - **Constraint**: Do NOT escalate scope. (e.g., If the user asks for a high-level design, do NOT propose writing full code unless necessary for the design).
+   - If `locked_intent` is provided below, you MUST strictly adhere to it. Do NOT re-analyze intent.
+   - If `locked_intent` is NOT provided, analyze the `task` to define the **Exact Deliverable**.
+   **Goal**:
+   - Create an INITIAL, MINIMAL specification of the final output that is sufficient to begin reasoning.
+   - Focus on identifying:
+     (a) the core artifact type (e.g., explanation, design, implementation, analysis)
+     (b) the minimum correctness or usefulness criteria implied by the task
+   - Treat this specification as a provisional contract that will be LOCKED after Iter 1.
+   **Inclusions (MUST include):**
+   - Only requirements that are EXPLICITLY stated by the user
+   - Or logically unavoidable for the task to be meaningful
+   **Exclusions (MUST NOT include):**
+   - ONLY items that the user has explicitly forbidden
+   - Do NOT invent prohibitions based on assumed intent, tone, or typical genre conventions
+   **Scope Constraint:**
+   - Do NOT escalate scope beyond what is NECESSARY to satisfy the user's request.
+   - If a more concrete artifact (e.g., a small code snippet, formula, example) REDUCES ambiguity rather than expanding functionality, it is NOT considered scope escalation.
 
 2. **Strictness Consistency**:
    - Analyze the implicit strictness of the `task` (Strict logic vs. Creative idea).
    - The `strictness` field in the output must be one of: 'strict', 'moderate', 'creative'.
+
 3. **Handling Feedback & Memory**:
    - If `feedback` is empty, generate strategies solely based on the task.
    - If `feedback` is provided, treat it as HARD CONSTRAINTS:

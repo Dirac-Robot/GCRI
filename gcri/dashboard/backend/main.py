@@ -84,11 +84,16 @@ async def get_status():
 @app.post('/api/abort')
 async def abort_task():
     global current_task_thread
-    if not execution_lock.locked():
+    if not execution_lock.locked() and current_task_thread is None:
         return {'status': 'no_task', 'message': 'No task is currently running.'}
 
     logger.warning('🛑 Abort requested by user!')
     abort_event.set()
+
+    # Cancel the asyncio task if it exists
+    if current_task_thread is not None and not current_task_thread.done():
+        current_task_thread.cancel()
+        logger.info('Task cancellation requested.')
 
     # Broadcast abort event to frontend
     if main_event_loop and main_event_loop.is_running():
@@ -137,20 +142,25 @@ async def run_task(task_request: TaskRequest):
 
     logger.info(f'🚀 Integrated Runner received task: {task_request.task} (Mode: {task_request.agent_mode})')
 
-    def _execute():
+    async def _execute_async():
+        global current_task_thread
         with execution_lock:
-             try:
-                 # Standardize call
-                 target_agent(task_request.task)
-             except KeyboardInterrupt:
-                 logger.warning('Task interrupted.')
-             except Exception as e:
-                 if abort_event.is_set():
-                     logger.warning('Task aborted by user.')
-                 else:
-                     logger.error(f'Execution failed: {e}')
+            try:
+                # Run the blocking agent call in a thread pool
+                await run_in_threadpool(target_agent, task_request.task)
+            except asyncio.CancelledError:
+                logger.warning('🛑 Task cancelled by user.')
+                raise
+            except Exception as e:
+                if abort_event.is_set():
+                    logger.warning('🛑 Task aborted by user.')
+                else:
+                    logger.error(f'Execution failed: {e}')
+            finally:
+                current_task_thread = None
 
-    asyncio.create_task(run_in_threadpool(_execute))
+    # Store the task so we can cancel it
+    current_task_thread = asyncio.create_task(_execute_async())
 
     return {'status': 'started', 'message': 'Task execution started in background.'}
 
@@ -165,15 +175,15 @@ async def startup_event():
         
         # Load BOTH agents
         gcri_instance = {}
-        
+
         try:
-            gcri_instance['unit'] = GCRI(scope.config)
+            gcri_instance['unit'] = GCRI(scope.config, abort_event=abort_event)
             logger.info('✅ GCRI Unit Instance Ready.')
         except Exception as e:
             logger.error(f'❌ Failed to load Unit Agent: {e}')
 
         try:
-            gcri_instance['planner'] = GCRIMetaPlanner(scope.config)
+            gcri_instance['planner'] = GCRIMetaPlanner(scope.config, abort_event=abort_event)
             logger.info('✅ GCRIMetaPlanner Instance Ready.')
         except Exception as e:
              logger.error(f'❌ Failed to load Planner Agent: {e}')

@@ -20,11 +20,17 @@ from gcri.tools.cli import build_model, get_input
 from gcri.tools.utils import SandboxManager
 
 
+class TaskAbortedError(Exception):
+    """Raised when a task is aborted by the user."""
+    pass
+
+
 class GCRI:
-    def __init__(self, config, schema=None):
+    def __init__(self, config, schema=None, abort_event=None):
         self.config = config
         self.schema = schema
         self.sandbox = SandboxManager(config)
+        self.abort_event = abort_event
 
         graph = StateGraph(TaskState)
         branch = StateGraph(BranchState)
@@ -190,7 +196,14 @@ class GCRI:
             intent_analysis=current_intent
         )
 
+    def _check_abort(self):
+        """Check if abort has been requested and raise TaskAbortedError if so."""
+        if self.abort_event is not None and self.abort_event.is_set():
+            logger.warning('🛑 Abort detected. Stopping execution.')
+            raise TaskAbortedError('Task aborted by user.')
+
     def sample_hypothesis(self, state: BranchState):
+        self._check_abort()
         logger.bind(
             ui_event='node_update',
             node='hypothesis',
@@ -232,6 +245,7 @@ class GCRI:
         return dict(hypothesis=hypothesis.hypothesis)
 
     def reasoning_and_refine(self, state: BranchState):
+        self._check_abort()
         logger.bind(
             ui_event='node_update',
             node='reasoning',
@@ -294,6 +308,7 @@ class GCRI:
         return self._memory_agent
 
     def verify(self, state: BranchState):
+        self._check_abort()
         logger.bind(
             ui_event='node_update',
             node='verification',
@@ -359,6 +374,7 @@ class GCRI:
         return '\n'.join(descriptions)
 
     def decide(self, state: TaskState):
+        self._check_abort()
         logger.bind(ui_event='phase_change', phase='decision').info('Starting Decision Phase...')
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
         file_contexts = self.sandbox.get_branch_context(state.count, len(state.results))
@@ -438,6 +454,7 @@ class GCRI:
         }
 
     def update_memory(self, state: TaskState):
+        self._check_abort()
         logger.bind(ui_event='phase_change', phase='memory').info('Updating Memory...')
         current_memory = state.memory
         memory_template_path = self.config.templates.memory

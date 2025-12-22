@@ -11,15 +11,16 @@ from loguru import logger
 from pydantic import TypeAdapter
 
 from gcri.dashboard.backend.manager import manager
-from gcri.graphs.gcri_unit import GCRI
+from gcri.graphs.gcri_unit import GCRI, TaskAbortedError
 from gcri.graphs.schemas import PlanProtoType, Compression, create_planner_schema
 from gcri.graphs.states import StructuredMemory, GlobalState
 
 
 class GCRIMetaPlanner:
-    def __init__(self, config, schema=None):
+    def __init__(self, config, schema=None, abort_event=None):
         self.config = config
         self.schema = schema
+        self.abort_event = abort_event
         gcri_config = dcp(config)
         self.work_dir = os.path.join(
             config.project_dir,
@@ -27,7 +28,7 @@ class GCRIMetaPlanner:
             f'planner-{datetime.now().strftime("%Y%m%d-%H%M%S")}'
         )
         gcri_config.run_dir = self.work_dir
-        self.gcri_unit = GCRI(gcri_config)
+        self.gcri_unit = GCRI(gcri_config, abort_event=abort_event)
         os.makedirs(self.work_dir, exist_ok=True)
         planner_config = config.agents.planner
         if schema:
@@ -52,6 +53,12 @@ class GCRIMetaPlanner:
         workflow.add_edge('exec_single_gcri_task', 'compress_memory')
         workflow.add_edge('compress_memory', 'plan')
         self._workflow = workflow.compile()
+
+    def _check_abort(self):
+        """Check if abort has been requested and raise TaskAbortedError if so."""
+        if self.abort_event is not None and self.abort_event.is_set():
+            logger.warning('🛑 Abort detected in planner. Stopping execution.')
+            raise TaskAbortedError('Task aborted by user.')
 
     @property
     def planner_agent(self):
@@ -103,6 +110,7 @@ class GCRIMetaPlanner:
             pass
 
     def plan(self, state: GlobalState):
+        self._check_abort()
         logger.info(f'PLANNING ITER #{state.plan_count} | Analyzing context...')
         self._broadcast_state(state, 'planning')
         
@@ -156,9 +164,10 @@ class GCRIMetaPlanner:
         return 'delegate'
 
     def exec_single_gcri_task(self, state: GlobalState):
+        self._check_abort()
         current_task = state.current_task
         logger.info(f'Planning Iter #{state.plan_count} | Delegating to GCRI Unit: {current_task}')
-        
+
         self._broadcast_state(state, 'executing')
         
         gcri_result = self.gcri_unit(task=current_task, initial_memory=state.memory, auto_commit=True)
@@ -167,8 +176,9 @@ class GCRIMetaPlanner:
         return {'mid_result': output, 'memory': updated_memory}
 
     def compress_memory(self, state: GlobalState):
+        self._check_abort()
         logger.info(f'Compress memory of #{state.plan_count}...')
-        
+
         self._broadcast_state(state, 'compressing')
         
         raw_constraints = state.memory.active_constraints
