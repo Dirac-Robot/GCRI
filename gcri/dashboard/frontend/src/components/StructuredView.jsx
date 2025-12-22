@@ -43,7 +43,7 @@ const StructuredView = ({ data }) => {
                 <div className="pl-4 border-l border-[var(--glass-border)] my-1">
                     {value.map((item, i) => (
                         <div key={i} className="mb-2 last:mb-0">
-                            <span className="text-gray-500 text-xs mr-2">[{i}]</span>
+                            <span className="text-gray-500 text-xs mr-2">[{i + 1}]</span>
                             {renderValue(item)}
                         </div>
                     ))}
