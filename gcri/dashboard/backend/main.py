@@ -30,6 +30,8 @@ app.add_middleware(
 gcri_instance: Optional[Any] = None  # GCRI or GCRIMetaPlanner
 execution_lock = threading.Lock()
 main_event_loop = None
+abort_event = threading.Event()
+current_task_thread: Optional[threading.Thread] = None
 
 
 class LogMessage(BaseModel):
@@ -55,10 +57,10 @@ def websocket_sink(message):
     try:
         import json
         record = json.loads(message)
-        
+
         if main_event_loop and main_event_loop.is_running():
              asyncio.run_coroutine_threadsafe(
-                 manager.broadcast({'type': 'log', 'data': record.get('record', record)}), 
+                 manager.broadcast({'type': 'log', 'data': record.get('record', record)}),
                  main_event_loop
              )
     except Exception as e:
@@ -71,10 +73,43 @@ async def receive_log(log: LogMessage):
     return {'status': 'ok'}
 
 
+@app.get('/api/status')
+async def get_status():
+    return {
+        'running': execution_lock.locked(),
+        'aborted': abort_event.is_set()
+    }
+
+
+@app.post('/api/abort')
+async def abort_task():
+    global current_task_thread
+    if not execution_lock.locked():
+        return {'status': 'no_task', 'message': 'No task is currently running.'}
+
+    logger.warning('🛑 Abort requested by user!')
+    abort_event.set()
+
+    # Broadcast abort event to frontend
+    if main_event_loop and main_event_loop.is_running():
+        asyncio.run_coroutine_threadsafe(
+            manager.broadcast({'type': 'log', 'data': {
+                'record': {
+                    'level': {'name': 'WARNING'},
+                    'message': '🛑 Task aborted by user.',
+                    'extra': {'ui_event': 'abort'}
+                }
+            }}),
+            main_event_loop
+        )
+
+    return {'status': 'aborting', 'message': 'Abort signal sent. Task will terminate shortly.'}
+
+
 @app.post('/api/run')
 async def run_task(task_request: TaskRequest):
-    global gcri_instance
-    
+    global gcri_instance, current_task_thread
+
     if not gcri_instance:
          # Should not happen as we init attempts to load
          return {'error': 'GCRI system not initialized.'}
@@ -90,12 +125,15 @@ async def run_task(task_request: TaskRequest):
             target_agent = gcri_instance['unit']
         else:
             return {'error': 'Unit agent not available.'}
-    
+
     if not task_request.task:
         return {'error': 'Task cannot be empty'}
-        
+
     if execution_lock.locked():
         return {'error': 'Another task is currently running. Please wait.'}
+
+    # Reset abort event for new task
+    abort_event.clear()
 
     logger.info(f'🚀 Integrated Runner received task: {task_request.task} (Mode: {task_request.agent_mode})')
 
@@ -104,8 +142,13 @@ async def run_task(task_request: TaskRequest):
              try:
                  # Standardize call
                  target_agent(task_request.task)
+             except KeyboardInterrupt:
+                 logger.warning('Task interrupted.')
              except Exception as e:
-                 logger.error(f'Execution failed: {e}')
+                 if abort_event.is_set():
+                     logger.warning('Task aborted by user.')
+                 else:
+                     logger.error(f'Execution failed: {e}')
 
     asyncio.create_task(run_in_threadpool(_execute))
 

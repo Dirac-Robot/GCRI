@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { Terminal, Activity, Server, Database, GitMerge, Play } from 'lucide-react';
+import { Terminal, Activity, Server, Database, GitMerge, Play, StopCircle } from 'lucide-react';
 import GraphVisualizer from './components/GraphVisualizer';
 import LogStream from './components/LogStream';
 import PlanningVisualizer from './components/PlanningVisualizer';
@@ -205,6 +205,7 @@ const App = () => {
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [viewingIterationIndex, setViewingIterationIndex] = useState(null); // null = live, number = viewing history
+  const [isTaskRunning, setIsTaskRunning] = useState(false);
 
   const engine = useMemo(() => new GraphEngine(), []);
   const wsRef = useRef(null);
@@ -277,6 +278,21 @@ const App = () => {
     try {
       const newState = engine.process(record);
       setEngineState(newState);
+
+      // Track running state based on phase changes
+      const extra = record.record?.extra || record.extra || {};
+      if (extra.ui_event === 'phase_change') {
+        const phase = extra.phase;
+        if (phase === 'strategy') {
+          setIsTaskRunning(true);
+        } else if (phase === 'idle' || phase === 'complete') {
+          setIsTaskRunning(false);
+        }
+      }
+      // Handle abort event
+      if (extra.ui_event === 'abort') {
+        setIsTaskRunning(false);
+      }
     } catch (e) {
       console.error("Engine process error", e);
     }
@@ -306,6 +322,24 @@ const App = () => {
             className="ml-4 flex items-center gap-2 bg-[rgba(0,255,0,0.1)] border border-[var(--neon-green)] text-[var(--neon-green)] px-3 py-1 rounded hover:bg-[var(--neon-green)] hover:text-black transition-all text-xs font-bold shadow-[0_0_10px_rgba(0,255,0,0.2)]"
           >
             <Play size={12} /> NEW TASK
+          </button>
+
+          <button
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/abort', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'aborting') {
+                  setIsTaskRunning(false);
+                }
+              } catch (e) {
+                console.error('Abort failed:', e);
+              }
+            }}
+            disabled={!isTaskRunning}
+            className="flex items-center gap-2 bg-[rgba(255,0,0,0.1)] border border-[var(--neon-red)] text-[var(--neon-red)] px-3 py-1 rounded hover:bg-[var(--neon-red)] hover:text-black transition-all text-xs font-bold shadow-[0_0_10px_rgba(255,0,0,0.2)] disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <StopCircle size={12} /> ABORT
           </button>
 
           <div className="h-6 w-[1px] bg-[var(--glass-border)]"></div>
