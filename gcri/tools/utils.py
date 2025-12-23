@@ -6,7 +6,27 @@ from loguru import logger
 
 
 class SandboxManager:
+    """
+    Manages isolated sandbox environments for GCRI branch execution.
+
+    Creates separate workspace directories for each iteration and branch,
+    copying project files while excluding common artifacts. Handles merging
+    winning branch results back to the project directory.
+
+    Attributes:
+        project_dir: Original project directory to clone from.
+        run_dir: Base directory for all sandbox runs.
+        work_dir: Current run's working directory (set after setup()).
+        log_dir: Directory for iteration logs.
+    """
+
     def __init__(self, config):
+        """
+        Initialize SandboxManager with configuration.
+
+        Args:
+            config: Configuration with project_dir, run_dir, and protocol settings.
+        """
         self.config = config
         self._project_dir = config.project_dir
         self._run_dir = config.run_dir
@@ -31,6 +51,12 @@ class SandboxManager:
         return self._log_dir
 
     def setup(self):
+        """
+        Initialize a new run with timestamped work directory.
+
+        Creates the work_dir and log_dir for this execution run.
+        Must be called before setup_branch().
+        """
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         self._work_dir = os.path.join(self.run_dir, f'run-{timestamp}')
         self._log_dir = os.path.join(self.work_dir, 'logs')
@@ -52,6 +78,20 @@ class SandboxManager:
             logger.warning(f'Smart copy failed for {src}: {e}')
 
     def setup_branch(self, iteration_count, branch_index):
+        """
+        Create an isolated workspace for a specific branch.
+
+        Copies project files to a branch-specific directory, excluding
+        common artifacts (.git, node_modules, venv, etc.). Uses symlinks
+        for large files to save space.
+
+        Args:
+            iteration_count: Current iteration index.
+            branch_index: Branch index within the iteration.
+
+        Returns:
+            str: Path to the created branch workspace directory.
+        """
         root_dir = os.path.join(self.work_dir, 'workspaces')
         os.makedirs(root_dir, exist_ok=True)
         branch_workspace = os.path.join(root_dir, f'iter_{iteration_count}_branch_{branch_index}')
@@ -107,6 +147,15 @@ class SandboxManager:
         )
 
     def commit_winning_branch(self, winning_branch_path):
+        """
+        Merge changes from winning branch back to project directory.
+
+        Copies all files from the winning branch workspace to the original
+        project directory, excluding common artifacts and symlinks.
+
+        Args:
+            winning_branch_path: Path to the winning branch workspace.
+        """
         logger.info(f'💾 Merging changes from winning branch: {winning_branch_path}')
         ignore_patterns = {'.git', '__pycache__', 'venv', 'env', '.idea', 'workspaces'}
         for root, dirs, files in os.walk(winning_branch_path):

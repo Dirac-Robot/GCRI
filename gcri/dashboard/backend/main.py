@@ -13,6 +13,7 @@ import pathlib
 from gcri.dashboard.backend.manager import manager
 from gcri.config import scope
 from gcri.dashboard.backend.watcher import watcher
+from gcri.dashboard.backend.web_callbacks import WebCallbacks
 from gcri.graphs.gcri_unit import GCRI
 from gcri.graphs.planner import GCRIMetaPlanner
 
@@ -41,6 +42,7 @@ class LogMessage(BaseModel):
 class TaskRequest(BaseModel):
     task: str
     agent_mode: str = 'unit'  # 'unit' or 'planner'
+    commit_mode: str = 'manual'  # 'auto-accept', 'auto-reject', 'manual'
 
 
 @app.websocket('/ws')
@@ -71,6 +73,58 @@ def websocket_sink(message):
 async def receive_log(log: LogMessage):
     await manager.broadcast({'type': 'log', 'data': log.record})
     return {'status': 'ok'}
+
+
+class WorkspaceRequest(BaseModel):
+    work_dir: str
+
+
+@app.post('/api/workspace/files')
+async def get_workspace_files(request: WorkspaceRequest):
+    """Get list of files in a branch workspace directory."""
+    work_dir = request.work_dir
+    if not work_dir or not os.path.exists(work_dir):
+        return {'files': [], 'error': 'Directory not found'}
+
+    files = []
+    ignore_patterns = {'.git', '__pycache__', 'venv', 'env', 'node_modules', '.idea', '.vscode'}
+    try:
+        for root, dirs, filenames in os.walk(work_dir):
+            dirs[:] = [d for d in dirs if d not in ignore_patterns and not d.startswith('.')]
+            rel_dir = os.path.relpath(root, work_dir)
+            if rel_dir == '.':
+                rel_dir = ''
+            for f in filenames:
+                if f.startswith('.'):
+                    continue
+                files.append({
+                    'name': f,
+                    'path': os.path.join(rel_dir, f) if rel_dir else f,
+                    'full_path': os.path.join(root, f)
+                })
+    except Exception as e:
+        return {'files': [], 'error': str(e)}
+
+    return {'files': files}
+
+
+class FileContentRequest(BaseModel):
+    file_path: str
+
+
+@app.post('/api/workspace/file')
+async def get_file_content(request: FileContentRequest):
+    """Get content of a specific file."""
+    file_path = request.file_path
+    if not file_path or not os.path.exists(file_path):
+        return {'content': '', 'error': 'File not found'}
+
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        return {'content': content}
+    except Exception as e:
+        return {'content': '', 'error': str(e)}
 
 
 @app.get('/api/status')
@@ -111,6 +165,39 @@ async def abort_task():
     return {'status': 'aborting', 'message': 'Abort signal sent. Task will terminate shortly.'}
 
 
+class CommitResponse(BaseModel):
+    approved: bool
+
+
+@app.post('/api/commit/respond')
+async def respond_to_commit(response: CommitResponse):
+    """Receive commit approval/rejection from frontend."""
+    from gcri.dashboard.backend.web_callbacks import WebCallbacks
+
+    callbacks = WebCallbacks.get_instance()
+    if not callbacks:
+        return {'status': 'error', 'message': 'No active callbacks instance.'}
+
+    if not callbacks.is_pending_commit():
+        return {'status': 'error', 'message': 'No pending commit request.'}
+
+    callbacks.receive_commit_response(response.approved)
+    action = 'approved' if response.approved else 'rejected'
+    logger.info(f'Commit {action} by user.')
+    return {'status': 'ok', 'action': action}
+
+
+@app.get('/api/commit/status')
+async def get_commit_status():
+    """Check if there's a pending commit request."""
+    from gcri.dashboard.backend.web_callbacks import WebCallbacks
+
+    callbacks = WebCallbacks.get_instance()
+    if not callbacks:
+        return {'pending': False}
+
+    return {'pending': callbacks.is_pending_commit()}
+
 @app.post('/api/run')
 async def run_task(task_request: TaskRequest):
     global gcri_instance, current_task_thread
@@ -140,7 +227,13 @@ async def run_task(task_request: TaskRequest):
     # Reset abort event for new task
     abort_event.clear()
 
-    logger.info(f'🚀 Integrated Runner received task: {task_request.task} (Mode: {task_request.agent_mode})')
+    # Set commit mode on WebCallbacks before execution
+    from gcri.dashboard.backend.web_callbacks import WebCallbacks
+    callbacks = WebCallbacks.get_instance()
+    if callbacks:
+        callbacks.set_commit_mode(task_request.commit_mode)
+
+    logger.info(f'🚀 Integrated Runner received task: {task_request.task} (Mode: {task_request.agent_mode}, Commit: {task_request.commit_mode})')
 
     async def _execute_async():
         global current_task_thread
@@ -172,18 +265,21 @@ async def startup_event():
         main_event_loop = asyncio.get_running_loop()
         
         logger.info('⚙️ Initializing Unified GCRI Backend...')
-        
+
+        # Create web callbacks with the event loop
+        web_callbacks = WebCallbacks(event_loop=main_event_loop)
+
         # Load BOTH agents
         gcri_instance = {}
 
         try:
-            gcri_instance['unit'] = GCRI(scope.config, abort_event=abort_event)
+            gcri_instance['unit'] = GCRI(scope.config, abort_event=abort_event, callbacks=web_callbacks)
             logger.info('✅ GCRI Unit Instance Ready.')
         except Exception as e:
             logger.error(f'❌ Failed to load Unit Agent: {e}')
 
         try:
-            gcri_instance['planner'] = GCRIMetaPlanner(scope.config, abort_event=abort_event)
+            gcri_instance['planner'] = GCRIMetaPlanner(scope.config, abort_event=abort_event, callbacks=web_callbacks)
             logger.info('✅ GCRIMetaPlanner Instance Ready.')
         except Exception as e:
              logger.error(f'❌ Failed to load Planner Agent: {e}')

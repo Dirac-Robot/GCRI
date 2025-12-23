@@ -16,7 +16,8 @@ from gcri.graphs.schemas import (
     ActiveConstraints, create_decision_schema
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
-from gcri.tools.cli import build_model, get_input
+from gcri.graphs.callbacks import GCRICallbacks, AutoCallbacks
+from gcri.tools.cli import build_model
 from gcri.tools.utils import SandboxManager
 
 
@@ -26,11 +27,37 @@ class TaskAbortedError(Exception):
 
 
 class GCRI:
-    def __init__(self, config, schema=None, abort_event=None):
+    """
+    Graph-based Collective Reasoning Interface.
+
+    GCRI is a multi-branch reasoning system that generates hypotheses,
+    refines them through reasoning, and verifies them against counterexamples.
+    It uses a LangGraph-based workflow to orchestrate parallel branch execution
+    and collective decision-making.
+
+    Attributes:
+        config: Configuration object containing model settings, templates, and protocols.
+        schema: Optional Pydantic schema for structured output validation.
+        sandbox: SandboxManager for isolated file system operations per branch.
+        abort_event: Optional threading.Event to signal task abortion.
+        callbacks: GCRICallbacks instance for environment-specific behavior (CLI, Web, etc.).
+    """
+
+    def __init__(self, config, schema=None, abort_event=None, callbacks=None):
+        """
+        Initialize GCRI with configuration and optional parameters.
+
+        Args:
+            config: Configuration object with model IDs, templates, and protocol settings.
+            schema: Optional Pydantic BaseModel for structured final output.
+            abort_event: Optional threading.Event for cooperative task cancellation.
+            callbacks: Optional GCRICallbacks instance. Defaults to AutoCallbacks.
+        """
         self.config = config
         self.schema = schema
         self.sandbox = SandboxManager(config)
         self.abort_event = abort_event
+        self.callbacks = callbacks or AutoCallbacks()
 
         graph = StateGraph(TaskState)
         branch = StateGraph(BranchState)
@@ -200,6 +227,18 @@ class GCRI:
             raise TaskAbortedError('Task aborted by user.')
 
     def sample_hypothesis(self, state: BranchState):
+        """
+        Generate an initial hypothesis for the given branch strategy.
+
+        Uses the configured hypothesis agent to propose a solution approach
+        based on the task, strategy, and accumulated feedback/memory.
+
+        Args:
+            state: BranchState containing task, strategy, and context.
+
+        Returns:
+            dict: Contains 'hypothesis' key with the generated hypothesis string.
+        """
         self._check_abort()
         logger.bind(
             ui_event='node_update',
@@ -237,11 +276,23 @@ class GCRI:
             ui_event='node_update',
             node='hypothesis',
             branch=state.index,
-            data={'hypothesis': hypothesis.hypothesis}
+            data={'hypothesis': hypothesis.hypothesis, 'work_dir': work_dir}
         ).info(f'Iter #{state.count_in_branch+1} | Sampled hypothesis #{state.index+1}: {hypothesis.hypothesis}')
         return dict(hypothesis=hypothesis.hypothesis)
 
     def reasoning_and_refine(self, state: BranchState):
+        """
+        Apply reasoning to refine the current hypothesis.
+
+        Analyzes the hypothesis through structured reasoning and produces
+        a refined version with supporting rationale.
+
+        Args:
+            state: BranchState with current hypothesis and context.
+
+        Returns:
+            dict: Contains 'reasoning' and refined 'hypothesis' keys.
+        """
         self._check_abort()
         logger.bind(
             ui_event='node_update',
@@ -281,7 +332,8 @@ class GCRI:
             branch=state.index,
             data={
                 'reasoning': reasoning.reasoning,
-                'hypothesis': reasoning.refined_hypothesis
+                'hypothesis': reasoning.refined_hypothesis,
+                'work_dir': work_dir
             }
         ).info(
             f'Iter #{state.count_in_branch+1} | '
@@ -305,6 +357,20 @@ class GCRI:
         return self._memory_agent
 
     def verify(self, state: BranchState):
+        """
+        Verify the refined hypothesis by attempting to find counterexamples.
+
+        The verification agent critically examines the hypothesis and attempts
+        to construct counterexamples that would invalidate it. The strength of
+        counterexamples determines whether the hypothesis is accepted.
+
+        Args:
+            state: BranchState with refined hypothesis to verify.
+
+        Returns:
+            dict: Contains 'results' list with HypothesisResult including
+                  counterexample and strength assessment.
+        """
         self._check_abort()
         logger.bind(
             ui_event='node_update',
@@ -354,7 +420,8 @@ class GCRI:
             branch=state.index,
             data={
                 'counter_example': verification.counter_example,
-                'counter_strength': verification.counter_strength
+                'counter_strength': verification.counter_strength,
+                'work_dir': work_dir
             }
         ).info(
             f'Iter #{state.count_in_branch+1} | '
@@ -371,6 +438,21 @@ class GCRI:
         return '\n'.join(descriptions)
 
     def decide(self, state: TaskState):
+        """
+        Make a collective decision based on all branch results.
+
+        Evaluates all hypothesis results from parallel branches and determines:
+        - Whether to accept one of the hypotheses as the final answer
+        - Which branch produced the best result
+        - What feedback to provide for the next iteration if rejected
+
+        Args:
+            state: TaskState with aggregated results from all branches.
+
+        Returns:
+            dict: Decision outcome including 'decision' boolean, 'best_branch_index',
+                  'final_output', 'feedback', and updated 'memory'.
+        """
         self._check_abort()
         logger.bind(ui_event='phase_change', phase='decision').info('Starting Decision Phase...')
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
@@ -451,6 +533,18 @@ class GCRI:
         }
 
     def update_memory(self, state: TaskState):
+        """
+        Update structured memory based on iteration results.
+
+        Processes the current iteration's feedback and stores relevant
+        learnings in memory for use in subsequent iterations.
+
+        Args:
+            state: TaskState with decision feedback and current memory.
+
+        Returns:
+            dict: Updated 'memory' and 'feedback' for next iteration.
+        """
         self._check_abort()
         logger.bind(ui_event='phase_change', phase='memory').info('Updating Memory...')
         current_memory = state.memory
@@ -496,6 +590,28 @@ class GCRI:
         }
 
     def __call__(self, task, initial_memory=None, auto_commit=False):
+        """
+        Execute the GCRI reasoning loop for a given task.
+
+        Orchestrates the complete reasoning pipeline:
+        1. Generate strategies
+        2. Execute parallel branches (hypothesis → reasoning → verification)
+        3. Make collective decisions
+        4. Update memory and iterate if needed
+        5. Optionally commit winning branch to project
+
+        Args:
+            task: Task description string or dict with state to resume.
+            initial_memory: Optional StructuredMemory to start with.
+            auto_commit: If True, automatically commit winning branch.
+
+        Returns:
+            dict: Final state including 'final_output', 'best_branch_index',
+                  'memory', 'count', and task metadata.
+
+        Raises:
+            TaskAbortedError: If abort_event is set during execution.
+        """
         self.sandbox.setup()
         feedback = ''
         memory = initial_memory if initial_memory is not None else StructuredMemory()
@@ -545,7 +661,12 @@ class GCRI:
                         winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
                         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
                         logger.info(f'📂 Location: {winning_branch_path}')
-                        if auto_commit or get_input('Apply this result to project root? (y/n): ').lower() == 'y':
+                        commit_context = {
+                            'winning_branch_path': winning_branch_path,
+                            'best_branch_index': best_branch_index,
+                            'final_output': result.get('final_output')
+                        }
+                        if auto_commit or self.callbacks.on_commit_request(commit_context):
                             self.sandbox.commit_winning_branch(winning_branch_path)
                         else:
                             logger.info('Changes discarded.')

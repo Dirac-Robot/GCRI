@@ -12,6 +12,7 @@ import './index.css';
 const TaskModal = ({ onClose }) => {
   const [task, setTask] = useState('');
   const [agentMode, setAgentMode] = useState('unit'); // 'unit' or 'planner'
+  const [commitMode, setCommitMode] = useState('manual'); // 'auto-accept', 'auto-reject', 'manual'
   const [status, setStatus] = useState('idle'); // idle, loading, success, error
 
   const handleSubmit = async (e) => {
@@ -23,7 +24,7 @@ const TaskModal = ({ onClose }) => {
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, agent_mode: agentMode })
+        body: JSON.stringify({ task, agent_mode: agentMode, commit_mode: commitMode })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -70,6 +71,20 @@ const TaskModal = ({ onClose }) => {
                 </button>
               </div>
 
+              {/* Commit Mode Selector */}
+              <div className="mb-4">
+                <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">On Completion</label>
+                <select
+                  value={commitMode}
+                  onChange={(e) => setCommitMode(e.target.value)}
+                  className="w-full bg-[#111] border border-[#333] rounded px-3 py-2 text-sm text-white focus:border-[var(--neon-purple)] focus:outline-none transition-colors cursor-pointer"
+                >
+                  <option value="manual">🔍 Request Review</option>
+                  <option value="auto-accept">✅ Always Accept</option>
+                  <option value="auto-reject">❌ Always Reject (Benchmark)</option>
+                </select>
+              </div>
+
               <textarea
                 className="w-full bg-[#050505] border border-[#333] rounded p-3 text-white font-mono text-sm focus:border-[var(--neon-green)] focus:outline-none transition-colors h-32 resize-none"
                 placeholder={agentMode === 'unit' ? "Describe a specific task for the Unit Agent..." : "Describe a high-level goal for the Meta Planner..."}
@@ -95,10 +110,92 @@ const TaskModal = ({ onClose }) => {
   );
 };
 
+// --- Commit Modal ---
+const CommitModal = ({ context, onClose }) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleResponse = async (approved) => {
+    setIsLoading(true);
+    try {
+      await fetch('/api/commit/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved })
+      });
+    } catch (e) {
+      console.error('Failed to send commit response:', e);
+    }
+    setIsLoading(false);
+    onClose();
+  };
+
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.8)] backdrop-blur-sm">
+      <div className="bg-[#0a0a0a] border border-[var(--neon-green)] rounded-xl p-6 max-w-lg w-full shadow-[0_0_50px_rgba(0,255,0,0.2)]">
+        <h2 className="text-xl font-bold text-[var(--neon-green)] mb-4 flex items-center gap-2">
+          🏆 Task Completed!
+        </h2>
+        <div className="text-gray-300 mb-4">
+          <p className="mb-2">Winning branch: <span className="text-[var(--neon-cyan)] font-bold">#{(context?.best_branch_index || 0) + 1}</span></p>
+          <p className="text-sm text-gray-500">Apply changes from winning branch to project root?</p>
+        </div>
+        {context?.final_output && (
+          <div className="bg-[#111] border border-[#333] rounded p-3 mb-4 max-h-32 overflow-auto">
+            <div className="text-xs text-gray-500 mb-1">Final Output:</div>
+            <pre className="text-xs text-gray-400 whitespace-pre-wrap">{context.final_output}</pre>
+          </div>
+        )}
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={() => handleResponse(false)}
+            disabled={isLoading}
+            className="px-4 py-2 text-sm font-bold bg-[#333] text-gray-300 rounded hover:bg-[#444] transition-colors disabled:opacity-50"
+          >
+            Discard
+          </button>
+          <button
+            onClick={() => handleResponse(true)}
+            disabled={isLoading}
+            className="px-4 py-2 text-sm font-bold bg-[var(--neon-green)] text-black rounded hover:bg-[#4fff4f] transition-colors disabled:opacity-50 shadow-[0_0_10px_rgba(0,255,0,0.4)]"
+          >
+            {isLoading ? 'Merging...' : 'Merge Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const DetailsModal = ({ data, files, onClose }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
+  const [workspaceFiles, setWorkspaceFiles] = useState([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+
+  // Get work_dir from node content
+  const workDir = data?.content?.work_dir || null;
+
+  // Fetch workspace files when work_dir changes or tab switches
+  useEffect(() => {
+    if (activeTab === 'workspace' && workDir) {
+      setLoadingFiles(true);
+      fetch('/api/workspace/files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ work_dir: workDir })
+      })
+        .then(res => res.json())
+        .then(result => {
+          setWorkspaceFiles(result.files || []);
+          setLoadingFiles(false);
+        })
+        .catch(() => {
+          setWorkspaceFiles([]);
+          setLoadingFiles(false);
+        });
+    }
+  }, [workDir, activeTab]);
 
   if (!data) return null;
 
@@ -107,9 +204,13 @@ const DetailsModal = ({ data, files, onClose }) => {
   const handleFileClick = async (file) => {
     setSelectedFile(file);
     try {
-      const response = await fetch(`/api/file?path=${encodeURIComponent(file.full_path)}`);
+      const response = await fetch('/api/workspace/file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: file.full_path })
+      });
       const result = await response.json();
-      setFileContent(result.content || result.error);
+      setFileContent(result.content || result.error || 'No content');
     } catch (e) {
       setFileContent('Error loading file.');
     }
@@ -152,25 +253,25 @@ const DetailsModal = ({ data, files, onClose }) => {
             <div className="flex w-full h-full">
               {/* File List */}
               <div className="w-1/3 border-r border-[#333] overflow-auto p-4 bg-[rgba(0,0,0,0.3)]">
-                {files && files.length > 0 ? (
-                  files.map((root, i) => (
-                    <div key={i} className="mb-4">
-                      <div className="text-[var(--neon-purple)] font-bold text-xs mb-2 uppercase">{root.name}</div>
-                      <div className="pl-2 space-y-1">
-                        {root.children.map((f, j) => (
-                          <div
-                            key={j}
-                            onClick={() => handleFileClick(f)}
-                            className={`cursor-pointer text-xs font-mono truncate px-2 py-1 rounded ${selectedFile === f ? 'bg-[var(--neon-purple)] text-black' : 'text-gray-400 hover:bg-[#222]'}`}
-                          >
-                            {f.name}
-                          </div>
-                        ))}
+                {!workDir ? (
+                  <div className="text-gray-500 italic text-xs">No workspace available for this node.</div>
+                ) : loadingFiles ? (
+                  <div className="text-gray-500 italic text-xs">Loading files...</div>
+                ) : workspaceFiles.length > 0 ? (
+                  <div className="space-y-1">
+                    <div className="text-[var(--neon-purple)] font-bold text-xs mb-2 uppercase">Branch Workspace</div>
+                    {workspaceFiles.map((f, i) => (
+                      <div
+                        key={i}
+                        onClick={() => handleFileClick(f)}
+                        className={`cursor-pointer text-xs font-mono truncate px-2 py-1 rounded ${selectedFile?.full_path === f.full_path ? 'bg-[var(--neon-purple)] text-black' : 'text-gray-400 hover:bg-[#222]'}`}
+                      >
+                        {f.path}
                       </div>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 ) : (
-                  <div className="text-gray-500 italic text-xs">No files monitored.</div>
+                  <div className="text-gray-500 italic text-xs">No files in workspace.</div>
                 )}
               </div>
               {/* File Viewer */}
@@ -206,6 +307,7 @@ const App = () => {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [viewingIterationIndex, setViewingIterationIndex] = useState(null); // null = live, number = viewing history
   const [isTaskRunning, setIsTaskRunning] = useState(false);
+  const [commitRequest, setCommitRequest] = useState(null); // {context, pending}
 
   const engine = useMemo(() => new GraphEngine(), []);
   const wsRef = useRef(null);
@@ -293,6 +395,14 @@ const App = () => {
       if (extra.ui_event === 'abort') {
         setIsTaskRunning(false);
       }
+      // Handle commit request event
+      if (extra.ui_event === 'commit_request') {
+        setCommitRequest({ context: extra.context, pending: true });
+      }
+      // Handle commit timeout
+      if (extra.ui_event === 'commit_timeout') {
+        setCommitRequest(null);
+      }
     } catch (e) {
       console.error("Engine process error", e);
     }
@@ -302,6 +412,12 @@ const App = () => {
     <div className="flex flex-col h-screen bg-[#050505] text-white overflow-hidden font-mono selection:bg-[var(--neon-cyan)] selection:text-black relative">
       <DetailsModal data={selectedNode} files={workspaceFiles} onClose={() => setSelectedNode(null)} />
       {showTaskModal && <TaskModal onClose={() => setShowTaskModal(false)} />}
+      {commitRequest && (
+        <CommitModal
+          context={commitRequest.context}
+          onClose={() => setCommitRequest(null)}
+        />
+      )}
 
       {/* HUD Overlay Grid */}
       <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none z-0"></div>

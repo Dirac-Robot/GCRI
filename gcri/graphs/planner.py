@@ -17,10 +17,37 @@ from gcri.graphs.states import StructuredMemory, GlobalState
 
 
 class GCRIMetaPlanner:
-    def __init__(self, config, schema=None, abort_event=None):
+    """
+    Meta-level planner that orchestrates multiple GCRI task executions.
+
+    GCRIMetaPlanner breaks down complex, multi-step goals into individual
+    tasks, delegates each to a GCRI unit, and compresses learned knowledge
+    between steps. It maintains a knowledge context that persists across
+    task boundaries.
+
+    Attributes:
+        config: Configuration object for planner and GCRI settings.
+        schema: Optional Pydantic schema for structured final output.
+        abort_event: Optional threading.Event for cooperative cancellation.
+        callbacks: Optional GCRICallbacks for environment-specific behavior.
+        gcri_unit: Internal GCRI instance for executing individual tasks.
+        work_dir: Directory for planner artifacts and logs.
+    """
+
+    def __init__(self, config, schema=None, abort_event=None, callbacks=None):
+        """
+        Initialize the meta-planner with configuration.
+
+        Args:
+            config: Configuration with planner, compression, and GCRI settings.
+            schema: Optional Pydantic schema for the final planning output.
+            abort_event: Optional Event for cooperative task cancellation.
+            callbacks: Optional callbacks for commit requests and UI updates.
+        """
         self.config = config
         self.schema = schema
         self.abort_event = abort_event
+        self.callbacks = callbacks
         gcri_config = dcp(config)
         self.work_dir = os.path.join(
             config.project_dir,
@@ -28,7 +55,7 @@ class GCRIMetaPlanner:
             f'planner-{datetime.now().strftime("%Y%m%d-%H%M%S")}'
         )
         gcri_config.run_dir = self.work_dir
-        self.gcri_unit = GCRI(gcri_config, abort_event=abort_event)
+        self.gcri_unit = GCRI(gcri_config, abort_event=abort_event, callbacks=callbacks)
         os.makedirs(self.work_dir, exist_ok=True)
         planner_config = config.agents.planner
         planner_schema = create_planner_schema(schema=schema)

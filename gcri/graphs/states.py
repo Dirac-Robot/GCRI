@@ -20,6 +20,12 @@ class IterationLog(BaseModel):
 
 
 class StructuredMemory(BaseModel):
+    """
+    Persistent memory structure that accumulates learnings across iterations.
+
+    Stores active constraints (rules to follow) and iteration history
+    (past decisions and their outcomes) to guide future reasoning.
+    """
     active_constraints: List[str] = Field(default_factory=list)
     history: List[IterationLog] = Field(default_factory=list)
 
@@ -52,6 +58,12 @@ class HypothesisResult(BaseModel):
 
 
 class TaskState(BaseModel):
+    """
+    Global state for a single GCRI task execution.
+
+    Tracks the current iteration, generated strategies, branch results,
+    collective decision outcomes, and accumulated memory/feedback.
+    """
     count: int = 0
     task: str
     intent_analysis: str = ''
@@ -72,6 +84,12 @@ class TaskState(BaseModel):
 
 
 class BranchState(BaseModel):
+    """
+    State for a single reasoning branch within an iteration.
+
+    Contains the branch-specific strategy, hypothesis under development,
+    and isolated workspace directory for file operations.
+    """
     task_in_branch: str
     intent_analysis_in_branch: str = ''
     count_in_branch: int = 0
@@ -85,6 +103,12 @@ class BranchState(BaseModel):
 
 
 class GlobalState(BaseModel):
+    """
+    State for the meta-planner across multiple GCRI task executions.
+
+    Maintains the overall goal, accumulated knowledge context from
+    completed tasks, and current planning progress.
+    """
     goal: str
     knowledge_context: List[str] = Field(default_factory=list)
     current_task: Optional[str] = None
