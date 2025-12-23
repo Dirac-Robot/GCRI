@@ -391,6 +391,16 @@ const App = () => {
           setIsTaskRunning(false);
         }
       }
+      // Handle state reset (new task starting)
+      if (extra.ui_event === 'state_reset') {
+        engine.reset();
+        setEngineState(engine.state);
+        setLogs([]);
+        setViewingIterationIndex(null);
+        setSelectedNode(null);
+        setWorkspaceFiles([]);
+        setPlannerHistory([]);
+      }
       // Handle abort event
       if (extra.ui_event === 'abort') {
         setIsTaskRunning(false);

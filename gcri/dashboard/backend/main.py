@@ -233,6 +233,23 @@ async def run_task(task_request: TaskRequest):
     if callbacks:
         callbacks.set_commit_mode(task_request.commit_mode)
 
+    # Broadcast state reset event to frontend
+    asyncio.run_coroutine_threadsafe(
+        manager.broadcast({
+            'type': 'log',
+            'data': {
+                'record': {
+                    'level': {'name': 'INFO'},
+                    'message': 'Starting new task...',
+                    'extra': {
+                        'ui_event': 'state_reset'
+                    }
+                }
+            }
+        }),
+        main_event_loop
+    )
+
     logger.info(f'🚀 Integrated Runner received task: {task_request.task} (Mode: {task_request.agent_mode}, Commit: {task_request.commit_mode})')
 
     async def _execute_async():

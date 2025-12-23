@@ -58,6 +58,8 @@ class GCRI:
         self.sandbox = SandboxManager(config)
         self.abort_event = abort_event
         self.callbacks = callbacks or AutoCallbacks()
+        with open(config.templates.global_rules, 'r') as f:
+            self.global_rules = f.read()
 
         graph = StateGraph(TaskState)
         branch = StateGraph(BranchState)
@@ -187,6 +189,7 @@ class GCRI:
                 num_hypothesis=len(self.config.agents.branches),
                 locked_intent=locked_intent
             )
+            template = f'{self.global_rules}\n\n{template}'
         for _ in range(self.config.protocols.max_tries_per_agent):
             strategies = self.strategy_agent.invoke(template)
             if strategies is not None:
@@ -263,6 +266,7 @@ class GCRI:
                 strategy=state.strategy,
                 intent_analysis=state.intent_analysis_in_branch
             )
+            template = f'{self.global_rules}\n\n{template}'
         for _ in range(self.config.protocols.max_tries_per_agent):
             hypothesis = agent.with_structured_output(schema=Hypothesis).invoke(template)
             if hypothesis is not None:
@@ -317,6 +321,7 @@ class GCRI:
                 hypothesis=state.hypothesis,
                 intent_analysis=state.intent_analysis_in_branch
             )
+            template = f'{self.global_rules}\n\n{template}'
         for _ in range(self.config.protocols.max_tries_per_agent):
             reasoning = agent.with_structured_output(schema=Reasoning).invoke(template)
             if reasoning is not None:
@@ -396,6 +401,7 @@ class GCRI:
                 hypothesis=state.hypothesis,
                 intent_analysis=state.intent_analysis_in_branch
             )
+            template = f'{self.global_rules}\n\n{template}'
         for _ in range(self.config.protocols.max_tries_per_agent):
             verification = agent.with_structured_output(schema=Verification).invoke(template)
             if verification is not None:
@@ -502,6 +508,7 @@ class GCRI:
             schema_desc=schema_desc,
             intent_analysis=state.intent_analysis
         )
+        template = f'{self.global_rules}\n\n{template}'
         self.decision_agent.work_dir = self.sandbox.work_dir
         for _ in range(self.config.protocols.max_tries_per_agent):
             decision = self.decision_agent.invoke(template)
@@ -565,6 +572,7 @@ class GCRI:
                 active_memory_template = f.read()
             try:
                 active_memory_template = active_memory_template.format(global_feedback=global_feedback)
+                active_memory_template = f'{self.global_rules}\n\n{active_memory_template}'
                 memory_agent = self.memory_agent
                 active_memory = memory_agent.invoke(active_memory_template)
                 new_constraints = active_memory.new_active_constraints
@@ -678,12 +686,21 @@ class GCRI:
                 except KeyboardInterrupt:
                     logger.warning(f'Iteration {index+1} interrupted by user. Stopping...')
                     raise
+                except TaskAbortedError:
+                    logger.warning(f'Iteration {index+1} aborted by user.')
+                    raise
                 except Exception as e:
                     logger.error(f'Iteration {index+1} error: {e}')
             else:
                 logger.info('Final result is not deduced, but iteration count is over.')
         except KeyboardInterrupt:
             logger.warning('GCRI Task interrupted by user (Ctrl+C). Returning last state.')
+            if result:
+                result['final_output'] = 'Task aborted by user.'
+            else:
+                result = {'final_output': 'Task aborted by user before first iteration completion.'}
+        except TaskAbortedError:
+            logger.warning('🛑 GCRI Task aborted by user. Returning last state.')
             if result:
                 result['final_output'] = 'Task aborted by user.'
             else:

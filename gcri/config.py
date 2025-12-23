@@ -97,6 +97,7 @@ def default(config):
         decision=get_template_path('decision.txt'),
         memory=get_template_path('memory.txt'),
         active_memory=get_template_path('active_memory.txt'),
+        global_rules=get_template_path('global_rules.txt')
     )
     config.plan.num_max_tasks = 5
     config.protocols = dict(
