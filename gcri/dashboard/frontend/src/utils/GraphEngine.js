@@ -36,6 +36,24 @@ export class GraphEngine {
                     if (this.state.iteration > 0 || this.state.strategies.length > 0) {
                         const archivedState = JSON.parse(JSON.stringify(this.state));
                         delete archivedState.history;
+                        // Clean up processing states from archived branches
+                        if (archivedState.branches) {
+                            archivedState.branches = archivedState.branches.map(branch => {
+                                if (branch.nodes) {
+                                    const cleanedNodes = {};
+                                    for (const [key, value] of Object.entries(branch.nodes)) {
+                                        // Remove processing/pending states - they shouldn't persist in history
+                                        if (value && value.type !== 'processing' && value.type !== 'pending') {
+                                            cleanedNodes[key] = value;
+                                        }
+                                    }
+                                    branch.nodes = cleanedNodes;
+                                }
+                                // Set final status for archived iteration
+                                branch.status = 'done';
+                                return branch;
+                            });
+                        }
                         this.state.history.push(archivedState);
                     }
                     // Reset branch states explicitly

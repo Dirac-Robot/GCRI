@@ -99,8 +99,9 @@ const GraphVisualizer = ({ state, onNodeSelect }) => {
     // Helper to determine node content based on status
     const getNodeContent = (status, nodeData, logs) => {
         if (status === 'pending') return { type: 'pending' };
-        if (status === 'active') return { type: 'processing', logs: logs || [] };
-        return nodeData || { type: 'processing', logs: logs || [] }; // Fallback to processing if active but no data
+        if (status === 'active') return nodeData || { type: 'processing', logs: logs || [] };
+        // For 'done' status: return actual data or null (will show "No data available")
+        return nodeData || null;
     };
 
     return (
