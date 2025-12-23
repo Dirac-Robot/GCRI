@@ -11,12 +11,11 @@ from gcri.graphs.schemas import (
     Reasoning,
     Hypothesis,
     Strategies,
-    DecisionProtoType,
     FailureCategory,
     ActiveConstraints, create_decision_schema
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
-from gcri.graphs.callbacks import GCRICallbacks, AutoCallbacks
+from gcri.graphs.callbacks import AutoCallbacks
 from gcri.tools.cli import build_model
 from gcri.tools.utils import SandboxManager
 

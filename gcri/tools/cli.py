@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, List, Type
 
 from ato.adict import ADict
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import Runnable, RunnableConfig
@@ -379,7 +379,15 @@ class RecursiveToolAgent(Runnable):
                             logger.error(f'Unknown error is occurred during building schema for tool-calling: {e}')
                             return
                     if name in self.tools_map:
-                        output = self.guard.invoke(name, args, call_id)
+                        tool_fn = self.tools_map[name]
+                        # Some tools (like search_web) don't need guard, execute directly
+                        if name in self.guard.tools:
+                            output = self.guard.invoke(name, args, call_id)
+                        else:
+                            try:
+                                output = tool_fn.invoke(args)
+                            except Exception as e:
+                                output = f'Tool Error: {e}'
                         outputs.append(ToolMessage(content=str(output), tool_call_id=call_id, name=name))
                 if is_finished:
                     return is_finished
