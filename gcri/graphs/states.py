@@ -7,9 +7,9 @@ from gcri.graphs.schemas import BranchAnalysis, RefutationStatus, Strategy
 
 
 class IterationLog(BaseModel):
-    count_in_memory_log: int
-    global_feedback: str
-    branch_evaluations: List[BranchAnalysis]
+    count_in_memory_log: int = Field(..., description='Iteration index for this log entry')
+    global_feedback: str = Field(default='', description='Strategic direction synthesized from all branch failures')
+    branch_evaluations: List[BranchAnalysis] = Field(default_factory=list, description='Detailed evaluation for each branch')
 
     def get_summary_line(self):
         summaries = []
@@ -26,8 +26,14 @@ class StructuredMemory(BaseModel):
     Stores active constraints (rules to follow) and iteration history
     (past decisions and their outcomes) to guide future reasoning.
     """
-    active_constraints: List[str] = Field(default_factory=list)
-    history: List[IterationLog] = Field(default_factory=list)
+    active_constraints: List[str] = Field(
+        default_factory=list,
+        description='Mandatory rules extracted from feedback. Must not be violated.'
+    )
+    history: List[IterationLog] = Field(
+        default_factory=list,
+        description='Past iteration logs with failures and learnings'
+    )
 
     def format_for_strategy(self, template):
         constraints = '\n'.join([f'- {c}' for c in self.active_constraints])
@@ -47,14 +53,14 @@ class StructuredMemory(BaseModel):
 
 
 class HypothesisResult(BaseModel):
-    index: int
-    strategy: Strategy
-    hypothesis: str
-    reasoning: str
-    counter_reasoning: str
-    counter_example: str
-    counter_strength: str
-    adjustment: str
+    index: int = Field(..., description='Branch index (0-based)')
+    strategy: Strategy = Field(..., description='Strategy used for this branch')
+    hypothesis: str = Field(..., description='The refined hypothesis after reasoning')
+    reasoning: str = Field(..., description='Evaluation of strengths, weaknesses, and failure points')
+    counter_reasoning: str = Field(..., description='Analysis of why the counter-example is valid')
+    counter_example: str = Field(..., description='Specific scenario where hypothesis fails')
+    counter_strength: str = Field(..., description='Severity: strong (fatal), moderate, weak, or none')
+    adjustment: str = Field(..., description='Concise log of what was changed to fix the counter-example')
 
 
 class TaskState(BaseModel):
@@ -64,23 +70,35 @@ class TaskState(BaseModel):
     Tracks the current iteration, generated strategies, branch results,
     collective decision outcomes, and accumulated memory/feedback.
     """
-    count: int = 0
-    task: str
-    intent_analysis: str = ''
-    task_strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
-    strategies: List[Strategy] = Field(
-        default_factory=list,
-        description='List of generated strategies.'
+    count: int = Field(default=0, description='Current iteration index (0-based)')
+    task: str = Field(..., description='Original task description')
+    intent_analysis: str = Field(default='', description='Locked user intent (scope/output type)')
+    task_strictness: Literal['strict', 'moderate', 'creative'] = Field(
+        default='moderate',
+        description='Strictness level: strict (rigorous), moderate (balanced), creative (insight-focused)'
     )
-    results: Annotated[List[HypothesisResult], operator.add] = Field(default_factory=list)
-    best_branch_index: Optional[int] = None
-    aggregated_result: Optional[List[Dict[str, Any]]] = None
-    decision: Optional[bool] = None
-    final_output: Optional[Any] = None
-    global_feedback: Optional[str] = None
-    branch_evaluations: List[BranchAnalysis] = Field(default_factory=list)
-    memory: StructuredMemory = Field(default_factory=StructuredMemory)
-    feedback: str = ''
+    strategies: List[Strategy] = Field(default_factory=list, description='Generated strategies for current iteration')
+    results: Annotated[List[HypothesisResult], operator.add] = Field(
+        default_factory=list,
+        description='Aggregated hypothesis results from all branches'
+    )
+    best_branch_index: int = Field(default=-1, description='Index of winning branch (-1 if none selected)')
+    aggregated_result: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description='Filtered results for decision agent'
+    )
+    decision: Optional[bool] = Field(default=None, description='Final decision: True if accepted, False if rejected')
+    final_output: Optional[Any] = Field(default=None, description='Final answer if decision is True')
+    global_feedback: Optional[str] = Field(
+        default=None,
+        description='Strategic direction for next iteration if decision is False'
+    )
+    branch_evaluations: List[BranchAnalysis] = Field(
+        default_factory=list,
+        description='Detailed analysis of each branch'
+    )
+    memory: StructuredMemory = Field(default_factory=StructuredMemory, description='Accumulated learnings across iterations')
+    feedback: str = Field(default='', description='Formatted feedback incorporating memory and constraints')
 
 
 class BranchState(BaseModel):
@@ -90,16 +108,19 @@ class BranchState(BaseModel):
     Contains the branch-specific strategy, hypothesis under development,
     and isolated workspace directory for file operations.
     """
-    task_in_branch: str
-    intent_analysis_in_branch: str = ''
-    count_in_branch: int = 0
-    strictness: Literal['strict', 'moderate', 'creative'] = 'moderate'
-    strategy: Strategy
-    index: int
-    hypothesis: Optional[str] = None
-    reasoning: Optional[str] = None
-    work_dir: str
-    results: List[HypothesisResult] = Field(default_factory=list)
+    task_in_branch: str = Field(..., description='Task description for this branch')
+    intent_analysis_in_branch: str = Field(default='', description='Locked user intent for this branch')
+    count_in_branch: int = Field(default=0, description='Current iteration index')
+    strictness: Literal['strict', 'moderate', 'creative'] = Field(
+        default='moderate',
+        description='Strictness level for this branch'
+    )
+    strategy: Strategy = Field(..., description='Strategy assigned to this branch')
+    index: int = Field(..., description='Branch index (0-based)')
+    hypothesis: Optional[str] = Field(default=None, description='Current hypothesis being developed')
+    reasoning: Optional[str] = Field(default=None, description='Reasoning evaluation of the hypothesis')
+    work_dir: str = Field(..., description='Isolated workspace directory for file operations')
+    results: List[HypothesisResult] = Field(default_factory=list, description='Results from this branch')
 
 
 class GlobalState(BaseModel):
@@ -109,11 +130,14 @@ class GlobalState(BaseModel):
     Maintains the overall goal, accumulated knowledge context from
     completed tasks, and current planning progress.
     """
-    goal: str
-    knowledge_context: List[str] = Field(default_factory=list)
-    current_task: Optional[str] = None
-    final_answer: Optional[Any] = None
-    mid_result: Optional[Any] = None
-    plan_count: int = 0
-    memory: StructuredMemory = Field(default_factory=StructuredMemory)
+    goal: str = Field(..., description='Overall goal for multi-step planning')
+    knowledge_context: List[str] = Field(
+        default_factory=list,
+        description='Accumulated knowledge summaries from completed tasks'
+    )
+    current_task: Optional[str] = Field(default=None, description='Current sub-task being executed')
+    final_answer: Optional[Any] = Field(default=None, description='Final answer if goal achieved')
+    mid_result: Optional[Any] = Field(default=None, description='Intermediate result from last task')
+    plan_count: int = Field(default=0, description='Number of planning iterations completed')
+    memory: StructuredMemory = Field(default_factory=StructuredMemory, description='Accumulated learnings')
 

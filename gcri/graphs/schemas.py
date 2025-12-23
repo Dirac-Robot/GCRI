@@ -43,13 +43,9 @@ class Strategy(BaseModel):
 
 
 class Strategies(BaseModel):
-    intent_analysis: Optional[str] = Field(
-        None,
-        description=(
-            'Summarize the user\'s desired scope (e.g., "User wants a review, not code"). '
-            'Analyze implicit Scope/Output Type. '
-            'If locked_intent is provided, this may be omitted.'
-        )
+    intent_analysis: str = Field(
+        default='',
+        description='User intent summary (scope/output type). Omit if locked_intent provided.'
     )
     strictness: Literal['strict', 'moderate', 'creative'] = Field(
         ...,
@@ -96,18 +92,23 @@ class Verification(BaseModel):
 
 
 class BranchAnalysis(BaseModel):
-    branch_index: int
+    branch_index: int = Field(..., description='0-based index of the branch being evaluated')
     summary_hypothesis: str = Field(..., description='Core idea summary of the hypothesis (1-2 sentences)')
     summary_counter_example: str = Field(..., description='Core summary of the raised counter-example')
-    status: RefutationStatus = Field(..., description='Refutation status of the hypothesis by the counter-example')
-    failure_category: FailureCategory
+    status: RefutationStatus = Field(..., description='Refutation status: valid (perfect), refuted (fatal flaw), or partial (incomplete)')
+    failure_category: FailureCategory = Field(
+        default=FailureCategory.NONE,
+        description='Category of failure if not valid: logic_error, req_missing, hallucination, practicality, other'
+    )
     reasoning: str = Field(..., description='Basis for judgment on whether the hypothesis survived or was rejected')
 
 
 class DecisionProtoType(BaseModel):
-    decision: bool = Field(..., description='Final approval decision (True if at least one is perfect)')
-    best_branch_index: Optional[int] = None
-    # final_output: Optional[Any] = Field(None, description='The final adopted perfect answer')
+    decision: bool = Field(..., description='True if at least one branch is valid and ready as final answer')
+    best_branch_index: int = Field(
+        default=-1,
+        description='0-based index of the winning branch. Required if decision is True.'
+    )
     global_feedback: Optional[str] = Field(
         None,
         description='Strategic direction for the next turn synthesizing all failures'

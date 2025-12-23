@@ -187,7 +187,7 @@ class GCRI:
         strategies = self._invoke_with_retry(self.strategy_agent, template, 'Strategy agent')
         for index, strategy in enumerate(strategies.strategies):
             logger.info(f'Iter #{state.count+1} | Sampled strategy #{index+1}: {strategy}')
-        current_intent = state.intent_analysis or strategies.intent_analysis
+        current_intent = state.intent_analysis or strategies.intent_analysis or ''
         if not state.intent_analysis and strategies.intent_analysis:
             logger.info(f'Iter #{state.count+1} | Intent Locked: {current_intent}')
         logger.bind(
@@ -484,10 +484,10 @@ class GCRI:
             data=decision.model_dump()
         ).info(f'Decision: {decision.decision}')
         if decision.decision:
-            if decision.best_branch_index is not None:
+            if decision.best_branch_index >= 0:
                 logger.info(f'Selected Best Branch Index: {decision.best_branch_index+1}')
             else:
-                logger.warning('Decision is True but best_branch_index is None')
+                logger.warning('Decision is True but best_branch_index is -1')
         else:
             logger.info(f'Feedback: {decision.global_feedback}')
         return {
@@ -619,8 +619,8 @@ class GCRI:
                     if result['decision']:
                         logger.info('Final result is successfully deduced.')
                         logger.info(f'Task Completed. Check sandbox: {self.sandbox.work_dir}')
-                        best_branch_index = result.get('best_branch_index')
-                        if best_branch_index is not None:
+                        best_branch_index = result.get('best_branch_index', -1)
+                        if best_branch_index >= 0:
                             winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
                             logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
                             logger.info(f'📂 Location: {winning_branch_path}')
