@@ -12,14 +12,16 @@ AGENT_NAMES_IN_BRANCH = ['hypothesis', 'reasoning', 'verification']
 
 def get_template_path(file_path: str, template_version: str = 'v0.1.0') -> str:
     try:
-        with resources.path('gcri.templates', file_path) as path:
-            return str(path)
-    except (ImportError, TypeError, ModuleNotFoundError):
-        current_dir = Path(__file__).resolve().parent
-        path = current_dir/'templates'/template_version/file_path
-        if path.exists():
-            return str(path)
-        raise FileNotFoundError(f'Template not found: {file_path}')
+        pkg_path = resources.files('gcri.templates').joinpath(template_version, file_path)
+        if pkg_path.is_file():
+            return str(pkg_path)
+    except (ImportError, TypeError, ModuleNotFoundError, AttributeError):
+        pass
+    current_dir = Path(__file__).resolve().parent
+    path = current_dir/'templates'/template_version/file_path
+    if path.exists():
+        return str(path)
+    raise FileNotFoundError(f'Template not found: {template_version}/{file_path}')
 
 
 @scope.observe(default=True)
