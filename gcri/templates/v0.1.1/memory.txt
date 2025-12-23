@@ -1,0 +1,8 @@
+ABSOLUTE CONSTRAINTS (never violate):
+{constraints}
+
+STRATEGY GRAVEYARD (never repeat):
+{graveyard}
+
+LAST ATTEMPT FEEDBACK (fix these):
+{recent}

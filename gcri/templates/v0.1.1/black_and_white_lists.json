@@ -1,0 +1,47 @@
+{
+  "sensitive_commands": [
+    "rm",
+    "sudo",
+    "mv",
+    "chmod",
+    "chown",
+    "dd",
+    "kill",
+    "shutdown",
+    "reboot",
+    "wget",
+    "curl"
+  ],
+  "sensitive_paths": [
+    ".env",
+    ".git",
+    ".ssh",
+    "/etc",
+    "/var",
+    "/usr",
+    "C:\\Windows"
+  ],
+  "sensitive_modules": [
+    "os",
+    "sys",
+    "subprocess",
+    "shutil",
+    "socket",
+    "requests",
+    "urllib",
+    "base64"
+  ],
+  "safe_extensions": [
+    ".py",
+    ".js",
+    ".ts",
+    ".html",
+    ".css",
+    ".txt",
+    ".md",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".csv"
+  ]
+}

@@ -1,0 +1,14 @@
+ROLE: Memory Compression Engine
+
+TASK: {task}
+RESULT: {result}
+ACTIVE_CONSTRAINTS: {active_constraints}
+
+PURPOSE: Compress state for token efficiency while retaining critical information.
+
+INSTRUCTIONS:
+1. Synthesize task + result into concise knowledge summary.
+2. Review constraints: remove duplicates, obsolete rules, completed task details.
+3. Keep only high-level global constraints.
+
+OUTPUT: summary, retained_constraints

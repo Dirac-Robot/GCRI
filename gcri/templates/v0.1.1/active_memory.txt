@@ -1,0 +1,7 @@
+Extract active constraints from feedback for next iteration.
+
+RULE: Do NOT convert proposed answers or hypothesis outcomes into constraints
+unless explicitly stated in the original task. "Prove X is true" is a goal, not a constraint.
+
+FEEDBACK:
+{global_feedback}

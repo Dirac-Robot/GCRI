@@ -169,43 +169,27 @@ class GCRI:
 
     def sample_strategies(self, state: TaskState):
         logger.info(f'Iter #{state.count+1} | Request generating strategies...')
-        template_path = self.config.templates.strategy_generator
+        locked_intent = state.intent_analysis or 'None (Analyze Fresh)'
         if state.intent_analysis:
-            locked_intent = state.intent_analysis
             logger.info(f'Iter #{state.count+1} | Using LOCKED Intent: {locked_intent}')
-        else:
-            locked_intent = 'None (Analyze Fresh)'
-
         logger.bind(
             ui_event='node_update',
             node='strategy',
             data={'type': 'processing'}
         ).info('Generating strategies...')
-        with open(template_path, 'r') as f:
-            template = f.read().format(
-                task=state.task,
-                feedback=state.feedback,
-                num_hypothesis=len(self.config.agents.branches),
-                locked_intent=locked_intent
-            )
-            template = f'{self.global_rules}\n\n{template}'
-        for _ in range(self.config.protocols.max_tries_per_agent):
-            strategies = self.strategy_agent.invoke(template)
-            if strategies is not None:
-                break
-        else:
-            raise ValueError(
-                f'Agent could not generate strategies '
-                f'for {self.config.protocols.max_tries_per_agent} times.'
-            )
+        template = self._load_template_with_rules(
+            self.config.templates.strategy_generator,
+            task=state.task,
+            feedback=state.feedback,
+            num_hypothesis=len(self.config.agents.branches),
+            locked_intent=locked_intent
+        )
+        strategies = self._invoke_with_retry(self.strategy_agent, template, 'Strategy agent')
         for index, strategy in enumerate(strategies.strategies):
             logger.info(f'Iter #{state.count+1} | Sampled strategy #{index+1}: {strategy}')
-
-        current_intent = state.intent_analysis
-        if not current_intent and strategies.intent_analysis:
-            current_intent = strategies.intent_analysis
+        current_intent = state.intent_analysis or strategies.intent_analysis
+        if not state.intent_analysis and strategies.intent_analysis:
             logger.info(f'Iter #{state.count+1} | Intent Locked: {current_intent}')
-
         logger.bind(
             ui_event='node_update',
             node='strategy',
@@ -216,7 +200,6 @@ class GCRI:
                 strictness=strategies.strictness
             )
         ).info('Strategies generated.')
-
         return dict(
             task_strictness=strategies.strictness,
             strategies=strategies.strategies,
@@ -228,6 +211,23 @@ class GCRI:
         if self.abort_event is not None and self.abort_event.is_set():
             logger.warning('🛑 Abort detected. Stopping execution.')
             raise TaskAbortedError('Task aborted by user.')
+
+    def _load_template_with_rules(self, template_path, **format_kwargs):
+        """Load template file, format with kwargs, and prepend global rules."""
+        with open(template_path, 'r') as f:
+            template = f.read().format(**format_kwargs)
+        return f'{self.global_rules}\n\n{template}'
+
+    def _invoke_with_retry(self, agent, template, error_context='agent'):
+        """Invoke agent with retry logic up to max_tries_per_agent times."""
+        for _ in range(self.config.protocols.max_tries_per_agent):
+            result = agent.invoke(template)
+            if result is not None:
+                return result
+        raise ValueError(
+            f'{error_context} could not generate output '
+            f'for {self.config.protocols.max_tries_per_agent} times.'
+        )
 
     def sample_hypothesis(self, state: BranchState):
         """
@@ -256,26 +256,15 @@ class GCRI:
             hypothesis_config.get('gcri_options'),
             work_dir=work_dir,
             **hypothesis_config.parameters
+        ).with_structured_output(schema=Hypothesis)
+        template = self._load_template_with_rules(
+            self.config.templates.hypothesis,
+            task=state.task_in_branch,
+            strictness=state.strictness,
+            strategy=state.strategy,
+            intent_analysis=state.intent_analysis_in_branch
         )
-        template_path = self.config.templates.hypothesis
-        with open(template_path, 'r') as f:
-            template = f.read().format(
-                task=state.task_in_branch,
-                strictness=state.strictness,
-                strategy=state.strategy,
-                intent_analysis=state.intent_analysis_in_branch
-            )
-            template = f'{self.global_rules}\n\n{template}'
-        for _ in range(self.config.protocols.max_tries_per_agent):
-            hypothesis = agent.with_structured_output(schema=Hypothesis).invoke(template)
-            if hypothesis is not None:
-                break
-        else:
-            raise ValueError(
-                f'Agent could not generate hypothesis '
-                f'for {self.config.protocols.max_tries_per_agent} times '
-                f'at strategy #{state.index+1}.'
-            )
+        hypothesis = self._invoke_with_retry(agent, template, f'Hypothesis agent at strategy #{state.index+1}')
         logger.bind(
             ui_event='node_update',
             node='hypothesis',
@@ -311,26 +300,15 @@ class GCRI:
             reasoning_config.get('gcri_options'),
             work_dir=work_dir,
             **reasoning_config.parameters
+        ).with_structured_output(schema=Reasoning)
+        template = self._load_template_with_rules(
+            self.config.templates.reasoning,
+            task=state.task_in_branch,
+            strategy=state.strategy,
+            hypothesis=state.hypothesis,
+            intent_analysis=state.intent_analysis_in_branch
         )
-        template_path = self.config.templates.reasoning
-        with open(template_path, 'r') as f:
-            template = f.read().format(
-                task=state.task_in_branch,
-                strategy=state.strategy,
-                hypothesis=state.hypothesis,
-                intent_analysis=state.intent_analysis_in_branch
-            )
-            template = f'{self.global_rules}\n\n{template}'
-        for _ in range(self.config.protocols.max_tries_per_agent):
-            reasoning = agent.with_structured_output(schema=Reasoning).invoke(template)
-            if reasoning is not None:
-                break
-        else:
-            raise ValueError(
-                f'Agent could not generate refined hypothesis '
-                f'for {self.config.protocols.max_tries_per_agent} times '
-                f'at hypothesis #{state.index+1}.'
-            )
+        reasoning = self._invoke_with_retry(agent, template, f'Reasoning agent at hypothesis #{state.index+1}')
         logger.bind(
             ui_event='node_update',
             node='reasoning',
@@ -390,26 +368,16 @@ class GCRI:
             verification_config.get('gcri_options'),
             work_dir=work_dir,
             **verification_config.parameters
+        ).with_structured_output(schema=Verification)
+        template = self._load_template_with_rules(
+            self.config.templates.verification,
+            task=state.task_in_branch,
+            strategy=state.strategy,
+            reasoning=state.reasoning,
+            hypothesis=state.hypothesis,
+            intent_analysis=state.intent_analysis_in_branch
         )
-        template_path = self.config.templates.verification
-        with open(template_path, 'r') as f:
-            template = f.read().format(
-                task=state.task_in_branch,
-                strategy=state.strategy,
-                reasoning=state.reasoning,
-                hypothesis=state.hypothesis,
-                intent_analysis=state.intent_analysis_in_branch
-            )
-            template = f'{self.global_rules}\n\n{template}'
-        for _ in range(self.config.protocols.max_tries_per_agent):
-            verification = agent.with_structured_output(schema=Verification).invoke(template)
-            if verification is not None:
-                break
-        else:
-            raise ValueError(
-                f'Agent could not generate verification '
-                f'for {self.config.protocols.max_tries_per_agent} times.'
-            )
+        verification = self._invoke_with_retry(agent, template, 'Verification agent')
         result = HypothesisResult(
             index=state.index,
             strategy=state.strategy,
@@ -509,19 +477,11 @@ class GCRI:
         )
         template = f'{self.global_rules}\n\n{template}'
         self.decision_agent.work_dir = self.sandbox.work_dir
-        for _ in range(self.config.protocols.max_tries_per_agent):
-            decision = self.decision_agent.invoke(template)
-            if decision is not None:
-                break
-        else:
-            raise ValueError(
-                f'Agent could not generate decision '
-                f'for {self.config.protocols.max_tries_per_agent} times.'
-            )
+        decision = self._invoke_with_retry(self.decision_agent, template, 'Decision agent')
         logger.bind(
             ui_event='node_update',
             node='decision',
-            data=decision.model_dump() if hasattr(decision, 'model_dump') else decision
+            data=decision.model_dump()
         ).info(f'Decision: {decision.decision}')
         if decision.decision:
             if decision.best_branch_index is not None:
@@ -530,16 +490,12 @@ class GCRI:
                 logger.warning('Decision is True but best_branch_index is None')
         else:
             logger.info(f'Feedback: {decision.global_feedback}')
-        # decision can be a pydantic model or a dictionary
-        is_dict = isinstance(decision, dict)
-        get_val = lambda obj, key, default=None: obj.get(key, default) if is_dict else getattr(obj, key, default)
-
         return {
-            'decision': get_val(decision, 'decision'),
-            'best_branch_index': get_val(decision, 'best_branch_index'),
-            'final_output': get_val(decision, 'final_output'),
-            'global_feedback': get_val(decision, 'global_feedback'),
-            'branch_evaluations': get_val(decision, 'branch_evaluations', [])
+            'decision': decision.decision,
+            'best_branch_index': decision.best_branch_index,
+            'final_output': decision.final_output,
+            'global_feedback': decision.global_feedback,
+            'branch_evaluations': getattr(decision, 'branch_evaluations', [])
         }
 
     def update_memory(self, state: TaskState):
@@ -664,24 +620,24 @@ class GCRI:
                         logger.info('Final result is successfully deduced.')
                         logger.info(f'Task Completed. Check sandbox: {self.sandbox.work_dir}')
                         best_branch_index = result.get('best_branch_index')
-                        if best_branch_index is None:
+                        if best_branch_index is not None:
+                            winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
+                            logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
+                            logger.info(f'📂 Location: {winning_branch_path}')
+                            commit_context = {
+                                'winning_branch_path': winning_branch_path,
+                                'best_branch_index': best_branch_index,
+                                'final_output': result.get('final_output')
+                            }
+                            if commit_mode == 'auto-accept' or (commit_mode == 'manual' and self.callbacks.on_commit_request(commit_context)):
+                                self.sandbox.commit_winning_branch(winning_branch_path)
+                            else:
+                                logger.info('Changes discarded.')
+                            break
+                        else:
                             logger.warning(
                                 'Decision is True but no branch index provided. Cannot commit automatically.'
                             )
-                            break
-                        winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
-                        logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
-                        logger.info(f'📂 Location: {winning_branch_path}')
-                        commit_context = {
-                            'winning_branch_path': winning_branch_path,
-                            'best_branch_index': best_branch_index,
-                            'final_output': result.get('final_output')
-                        }
-                        if commit_mode == 'auto-accept' or (commit_mode == 'manual' and self.callbacks.on_commit_request(commit_context)):
-                            self.sandbox.commit_winning_branch(winning_branch_path)
-                        else:
-                            logger.info('Changes discarded.')
-                        break
                     else:
                         memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])
                         feedback = result['feedback']
@@ -695,14 +651,9 @@ class GCRI:
                     logger.error(f'Iteration {index+1} error: {e}')
             else:
                 logger.info('Final result is not deduced, but iteration count is over.')
-        except KeyboardInterrupt:
-            logger.warning('GCRI Task interrupted by user (Ctrl+C). Returning last state.')
-            if result:
-                result['final_output'] = 'Task aborted by user.'
-            else:
-                result = {'final_output': 'Task aborted by user before first iteration completion.'}
-        except TaskAbortedError:
-            logger.warning('🛑 GCRI Task aborted by user. Returning last state.')
+        except (KeyboardInterrupt, TaskAbortedError) as e:
+            is_abort = isinstance(e, TaskAbortedError)
+            logger.warning('🛑 GCRI Task aborted by user.' if is_abort else 'GCRI Task interrupted by user (Ctrl+C).')
             if result:
                 result['final_output'] = 'Task aborted by user.'
             else:

@@ -1,0 +1,15 @@
+[GLOBAL RULES]
+
+TOOL POLICY:
+- Use tools when needed for correctness/reliability. Skip when unnecessary.
+- Never claim tools are unavailable if provided by runtime.
+- Tool usage ≠ scope expansion.
+
+OUTPUT POLICY:
+- Code artifacts → write to files, output only paths + run_command.
+- Never inline full code in responses.
+- Treat written files as the deliverable.
+
+BEHAVIORAL POLICY:
+- Execute, don't plan. Produce actual content, not outlines.
+- Match strictness level: strict=rigorous, moderate=practical, creative=novel.

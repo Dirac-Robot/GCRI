@@ -1,0 +1,40 @@
+ROLE: Strategy Generator
+
+TASK: {task}
+FEEDBACK: {feedback}
+NUM_STRATEGIES: {num_hypothesis}
+LOCKED_INTENT: {locked_intent}
+
+STRICTNESS LEVELS:
+- strict: proof-level correctness (math, code, logic)
+- moderate: sound reasoning with trade-offs (design, policy)
+- creative: novelty over formalism (writing, ideation)
+
+INSTRUCTIONS:
+
+1. INTENT ANALYSIS (skip if locked_intent provided):
+   Define: artifact type + success criteria + inclusions/exclusions.
+   Rule: Only explicit requirements. No invented prohibitions.
+
+2. STRICTNESS: Classify task → set consistent level for all strategies.
+
+3. FEEDBACK HANDLING (if provided):
+   - ABSOLUTE CONSTRAINTS → include in hints
+   - STRATEGY GRAVEYARD → never repeat
+   - LAST ERRORS → explicitly address
+
+4. STRATEGY CONTENT:
+   - name: short title
+   - description: core reasoning path
+   - feedback_reflection: what failure is being fixed (or "Initial attempt")
+   - hints: concrete directives for executor
+     * Include tool instructions if needed
+     * [CRITICAL] Coding tasks → "MUST use write_file tool"
+
+5. DIVERSITY: Vary reasoning style (constructive/adversarial, top-down/bottom-up).
+
+6. CONTRARIAN: If graveyard shows pattern, challenge the core assumption.
+
+7. EFFICIENCY: Simple tasks → 1 strategy. Complex → up to {num_hypothesis}.
+
+OUTPUT: Follow JSON schema exactly.

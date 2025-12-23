@@ -10,13 +10,13 @@ scope = Scope(config=ADict.auto())
 AGENT_NAMES_IN_BRANCH = ['hypothesis', 'reasoning', 'verification']
 
 
-def get_template_path(file_path: str) -> str:
+def get_template_path(file_path: str, template_version: str = 'v0.1.0') -> str:
     try:
         with resources.path('gcri.templates', file_path) as path:
             return str(path)
     except (ImportError, TypeError, ModuleNotFoundError):
         current_dir = Path(__file__).resolve().parent
-        path = current_dir/'templates'/file_path
+        path = current_dir/'templates'/template_version/file_path
         if path.exists():
             return str(path)
         raise FileNotFoundError(f'Template not found: {file_path}')
@@ -115,6 +115,23 @@ def default(config):
         host='127.0.0.1',
         port=8000,
         monitor_directories=[]  # User can override this with paths to watch
+    )
+
+
+@scope.observe()
+def reduce_tokens(config):
+    config.templates = dict(
+        planner=get_template_path('planner.txt', 'v0.1.1'),
+        compression=get_template_path('compression.txt', 'v0.1.1'),
+        black_and_white_lists=get_template_path('black_and_white_lists.json', 'v0.1.1'),
+        strategy_generator=get_template_path('strategy_generator.txt', 'v0.1.1'),
+        hypothesis=get_template_path('hypothesis.txt', 'v0.1.1'),
+        reasoning=get_template_path('reasoning.txt', 'v0.1.1'),
+        verification=get_template_path('verification.txt', 'v0.1.1'),
+        decision=get_template_path('decision.txt', 'v0.1.1'),
+        memory=get_template_path('memory.txt', 'v0.1.1'),
+        active_memory=get_template_path('active_memory.txt', 'v0.1.1'),
+        global_rules=get_template_path('global_rules.txt', 'v0.1.1')
     )
 
 
