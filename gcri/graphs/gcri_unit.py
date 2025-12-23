@@ -524,7 +524,10 @@ class GCRI:
             data=decision.model_dump() if hasattr(decision, 'model_dump') else decision
         ).info(f'Decision: {decision.decision}')
         if decision.decision:
-            logger.info(f'Selected Best Branch Index: {decision.best_branch_index+1}')
+            if decision.best_branch_index is not None:
+                logger.info(f'Selected Best Branch Index: {decision.best_branch_index+1}')
+            else:
+                logger.warning('Decision is True but best_branch_index is None')
         else:
             logger.info(f'Feedback: {decision.global_feedback}')
         # decision can be a pydantic model or a dictionary
