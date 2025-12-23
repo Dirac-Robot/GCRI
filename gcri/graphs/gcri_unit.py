@@ -208,7 +208,8 @@ class GCRI:
             ui_event='node_update',
             node='strategy',
             data=dict(
-                strategies=strategies.strategies,
+                task=state.task,
+                strategies=[s.model_dump() for s in strategies.strategies],
                 intent_analysis=current_intent,
                 strictness=strategies.strictness
             )

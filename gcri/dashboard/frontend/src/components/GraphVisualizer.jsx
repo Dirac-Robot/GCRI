@@ -120,10 +120,11 @@ const GraphVisualizer = ({ state, onNodeSelect }) => {
                     color: 'var(--neon-cyan)',
                     content: getNodeContent(
                         phase === 'idle' ? 'pending' : (phase === 'strategy' ? 'active' : 'done'),
-                        state.strategyData || { strategies: state.strategies },
-                        // Strategy doesn't have separate logs array in this context yet, 
-                        // but if we wanted to support it, we'd need to pass it. 
-                        // For now default to empty logs if active.
+                        // Only pass data if we have actual strategy data
+                        (state.strategyData && state.strategies.length > 0) ? {
+                            task: state.task,
+                            ...state.strategyData
+                        } : null,
                         []
                     )
                 }}

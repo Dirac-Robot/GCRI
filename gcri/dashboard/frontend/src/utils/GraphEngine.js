@@ -73,6 +73,9 @@ export class GraphEngine {
                 if (data.strategies) {
                     this.state.strategies = data.strategies;
                     this.state.strategyData = data;
+                    if (data.task) {
+                        this.state.task = data.task;
+                    }
                 } else if (Array.isArray(data)) {
                     this.state.strategies = data;
                     this.state.strategyData = { strategies: data };
