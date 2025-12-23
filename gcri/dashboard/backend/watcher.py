@@ -50,10 +50,9 @@ class WorkspaceWatcher:
             for dirpath, _, filenames in os.walk(root_path):
                 if '/.' in dirpath:
                     continue
-                    
                 for f in filenames:
-                    if f.startswith('.'): continue
-                    
+                    if f.startswith('.'):
+                        continue
                     full_path = os.path.join(dirpath, f)
                     try:
                         mtime = os.path.getmtime(full_path)
@@ -78,13 +77,15 @@ class WorkspaceWatcher:
             root_name = os.path.basename(root_path)
             files = []
             for dirpath, _, filenames in os.walk(root_path):
-                if '/.' in dirpath: continue
-                
+                if '/.' in dirpath:
+                    continue
                 rel_dir = os.path.relpath(dirpath, root_path)
-                if rel_dir == '.': rel_dir = ""
+                if rel_dir == '.':
+                    rel_dir = ''
                 
                 for f in filenames:
-                    if f.startswith('.'): continue
+                    if f.startswith('.'):
+                        continue
                     files.append({
                         'name': f,
                         'path': os.path.join(rel_dir, f),

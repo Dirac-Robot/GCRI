@@ -24,7 +24,7 @@ INSTRUCTIONS:
 
 4. CODE TASKS:
    - Write fixes to files using tools
-   - Output only: {entrypoint, files_written, run_command, notes}
+   - Output only: [entrypoint, files_written, run_command, notes]
 
 OUTPUT:
 - reasoning: strengths, weaknesses, failure points identified

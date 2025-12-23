@@ -1,8 +1,7 @@
-from abc import ABC
 from typing import Any, Dict, Optional
 
 
-class GCRICallbacks(ABC):
+class GCRICallbacks:
     """
     Base callback interface for GCRI.
     Override methods to customize behavior for different environments (CLI, Web, API, etc.)

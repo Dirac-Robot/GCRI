@@ -12,10 +12,10 @@ from gcri.tools.cli import get_input
 def main(config):
     load_dotenv()
     planner = GCRIMetaPlanner(config)
-    logger.info("🤖 GCRI Meta Planner Started.")
-    logger.info("- Press [Ctrl+C] during input to EXIT.")
-    logger.info("- Press [Ctrl+C] during task to ABORT task.")
-    logger.info("- Type 'q' to quit.\n")
+    logger.info('🤖 GCRI Meta Planner Started.')
+    logger.info('- Press [Ctrl+C] during input to EXIT.')
+    logger.info('- Press [Ctrl+C] during task to ABORT task.')
+    logger.info('- Type "q" to quit.\n')
     result = None
     while True:
         try:
@@ -29,9 +29,9 @@ def main(config):
             elif command.lower() in ('/q', '/quit', '/exit'):
                 logger.info('👋 Exiting GCRI Planner...')
                 break
-            elif command.lower() == ('/r', '/retry'):
+            elif command.lower() in ('/r', '/retry'):
                 if result is None:
-                    logger.warning("⚠️ No previous state.")
+                    logger.warning('⚠️ No previous state.')
                     continue
                 task = result
             elif os.path.exists(command):

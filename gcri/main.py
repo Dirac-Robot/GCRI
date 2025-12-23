@@ -14,13 +14,12 @@ from gcri.tools.cli import get_input
 def main(config):
     load_dotenv()
 
-    # Dashboard Integration
     dashboard_cfg = getattr(config, 'dashboard', {})
     if dashboard_cfg.get('enabled', False):
         try:
             host = dashboard_cfg.get('host', '127.0.0.1')
             port = dashboard_cfg.get('port', 8000)
-            url = f"http://{host}:{port}/api/log"
+            url = f'http://{host}:{port}/api/log'
 
             def http_sink(message):
                 try:
@@ -29,16 +28,16 @@ def main(config):
                 except Exception:
                     pass
 
-            logger.add(http_sink, serialize=True, level="INFO")
-            logger.info(f"📡 Dashboard Logging Enabled: {url}")
+            logger.add(http_sink, serialize=True, level='INFO')
+            logger.info(f'📡 Dashboard Logging Enabled: {url}')
         except Exception as e:
-            logger.error(f"Failed to initialize dashboard sink: {e}")
+            logger.error(f'Failed to initialize dashboard sink: {e}')
 
     worker = GCRI(config)
-    logger.info("🤖 GCRI Single Worker Started.")
-    logger.info("- Press [Ctrl+C] during input to EXIT.")
-    logger.info("- Press [Ctrl+C] during task to ABORT task.")
-    logger.info("- Type 'q' to quit.\n")
+    logger.info('🤖 GCRI Single Worker Started.')
+    logger.info('- Press [Ctrl+C] during input to EXIT.')
+    logger.info('- Press [Ctrl+C] during task to ABORT task.')
+    logger.info('- Type "q" to quit.\n')
     result = None
     while True:
         try:
@@ -52,11 +51,11 @@ def main(config):
             elif command.lower() in ('/q', '/quit', '/exit'):
                 logger.info('👋 Exiting GCRI Worker...')
                 break
-            elif command.lower() == ('/r', '/retry'):
+            elif command.lower() in ('/r', '/retry'):
                 if result is None:
-                    logger.warning("⚠️ No previous state found in memory. Please run a task first.")
+                    logger.warning('⚠️ No previous state found in memory. Please run a task first.')
                     continue
-                logger.info("🔄 Retrying with last state...")
+                logger.info('🔄 Retrying with last state.')
                 task = result
             elif os.path.exists(command):
                 with open(command) as f:

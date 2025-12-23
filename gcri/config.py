@@ -120,7 +120,7 @@ def default(config):
     )
 
 
-@scope.observe()
+@scope.observe(lazy=True)
 def reduce_tokens(config):
     config.templates = dict(
         planner=get_template_path('planner.txt', 'v0.1.1'),

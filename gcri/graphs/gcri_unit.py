@@ -193,18 +193,18 @@ class GCRI:
         logger.bind(
             ui_event='node_update',
             node='strategy',
-            data=dict(
-                task=state.task,
-                strategies=[s.model_dump() for s in strategies.strategies],
-                intent_analysis=current_intent,
-                strictness=strategies.strictness
-            )
+            data={
+                'task': state.task,
+                'strategies': [s.model_dump() for s in strategies.strategies],
+                'intent_analysis': current_intent,
+                'strictness': strategies.strictness
+            }
         ).info('Strategies generated.')
-        return dict(
-            task_strictness=strategies.strictness,
-            strategies=strategies.strategies,
-            intent_analysis=current_intent
-        )
+        return {
+            'task_strictness': strategies.strictness,
+            'strategies': strategies.strategies,
+            'intent_analysis': current_intent
+        }
 
     def _check_abort(self):
         """Check if abort has been requested and raise TaskAbortedError if so."""
@@ -271,7 +271,7 @@ class GCRI:
             branch=state.index,
             data={'hypothesis': hypothesis.hypothesis, 'work_dir': work_dir}
         ).info(f'Iter #{state.count_in_branch+1} | Sampled hypothesis #{state.index+1}: {hypothesis.hypothesis}')
-        return dict(hypothesis=hypothesis.hypothesis)
+        return {'hypothesis': hypothesis.hypothesis}
 
     def reasoning_and_refine(self, state: BranchState):
         """
@@ -322,10 +322,10 @@ class GCRI:
             f'Iter #{state.count_in_branch+1} | '
             f'Refined hypothesis #{state.index+1}: {reasoning.refined_hypothesis}'
         )
-        return dict(
-            reasoning=reasoning.reasoning,
-            hypothesis=reasoning.refined_hypothesis
-        )
+        return {
+            'reasoning': reasoning.reasoning,
+            'hypothesis': reasoning.refined_hypothesis
+        }
 
     @property
     def strategy_agent(self):

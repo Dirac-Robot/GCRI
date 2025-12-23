@@ -11,15 +11,10 @@ from tqdm import tqdm
 from gcri.graphs.gcri_unit import GCRI
 from gcri.config import scope
 
-# ---------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------
 BENCHMARK_DIR = 'benchmark_results/gpqa'
 RESULT_FILE = os.path.join(BENCHMARK_DIR, 'gpqa_diamond_results.json')
-
-# GPQA Diamond is the high-quality subset
-DATASET_NAME = "idavidrein/gpqa"
-DATASET_SUBSET = "gpqa_diamond"
+DATASET_NAME = 'idavidrein/gpqa'
+DATASET_SUBSET = 'gpqa_diamond'
 
 
 class GPQAResult(BaseModel):
@@ -38,24 +33,18 @@ def setup_directories():
 
 
 def format_choices(correct_answer, incorrect_answers):
-    """
-    Shuffles answers and returns a formatted string and the correct letter key.
-    """
     all_choices = [correct_answer]+incorrect_answers
     random.shuffle(all_choices)
-
     options = ['A', 'B', 'C', 'D']
     choice_map = {}
     correct_letter = None
-
-    formatted_str = ""
+    formatted_str = ''
     for idx, choice_text in enumerate(all_choices):
         letter = options[idx]
-        formatted_str += f"{letter}) {choice_text}\n"
+        formatted_str += f'{letter}) {choice_text}\n'
         choice_map[letter] = choice_text
         if choice_text == correct_answer:
             correct_letter = letter
-
     return formatted_str.strip(), correct_letter, choice_map
 
 
@@ -65,13 +54,10 @@ def run_benchmark(config, num_samples=None):
     logger.info(config.to_xyz())
     load_dotenv()
     setup_directories()
-
     logger.info('🤖 GCRI Worker Initializing for GPQA (Research Reasoning Mode)...')
     worker = GCRI(config, schema=GPQAResult)
-
     logger.info(f'📚 Loading {DATASET_NAME} ({DATASET_SUBSET}) dataset...')
     try:
-        # Load GPQA Diamond dataset
         dataset = load_dataset(DATASET_NAME, DATASET_SUBSET, split='train')
     except Exception as e:
         logger.error(f'Failed to load dataset: {e}')
@@ -85,8 +71,6 @@ def run_benchmark(config, num_samples=None):
     processed_ids = set()
     total_processed = 0
     total_correct = 0
-
-    # Resume capability
     if os.path.exists(RESULT_FILE):
         try:
             with open(RESULT_FILE, 'r', encoding='utf-8') as f:
@@ -104,41 +88,30 @@ def run_benchmark(config, num_samples=None):
                 logger.info(f'🔄 Resuming... {total_processed} items retained.')
         except json.JSONDecodeError:
             logger.warning('⚠️ Result file is corrupt. Starting fresh.')
-
-    # GPQA doesn't have explicit task_ids, so we use enumeration or generate hash if needed.
-    # Here we just iterate directly.
     for idx, item in tqdm(enumerate(dataset), total=len(dataset), desc='Benchmarking GPQA'):
         question = item.get('Question')
         if question in processed_ids:
             continue
-
         correct_answer = item.get('Correct Answer')
         incorrect_answers = [
             item.get('Incorrect Answer 1'),
             item.get('Incorrect Answer 2'),
             item.get('Incorrect Answer 3')
         ]
-
-        # Filter out incomplete data if any
         if not correct_answer or not question:
             continue
-
-        # Shuffle choices to prevent position bias
         choices_str, correct_letter, choice_map = format_choices(correct_answer, incorrect_answers)
 
         try:
             task_prompt = (
-                f"You are a PhD-level scientific researcher.\n"
-                f"Answer the following question by reasoning through the scientific principles step-by-step.\n"
-                f"The question is designed to be difficult and requires deep domain knowledge.\n\n"
-                f"Question: {question}\n\n"
-                f"Choices:\n{choices_str}\n\n"
-                f"Select the single best answer (A, B, C, or D)."
+                f'You are a PhD-level scientific researcher.\n'
+                f'Answer the following question by reasoning through the scientific principles step-by-step.\n'
+                f'The question is designed to be difficult and requires deep domain knowledge.\n\n'
+                f'Question: {question}\n\n'
+                f'Choices:\n{choices_str}\n\n'
+                f'Select the single best answer (A, B, C, or D).'
             )
-
             logger.info(f'▶ Running Question: {question[:50]}...')
-
-            # Execute Agent
             output_state = worker(task_prompt, commit_mode='auto-reject')
             final_output_obj = output_state.get('final_output')
 
@@ -148,17 +121,13 @@ def run_benchmark(config, num_samples=None):
             if final_output_obj:
                 if isinstance(final_output_obj, dict):
                     parsed_choice = final_output_obj.get('selected_choice', '').strip().upper()
-                    # Cleanup if model outputs "A)" or "A."
                     parsed_choice = parsed_choice.replace(')', '').replace('.', '')
                     parsed_reasoning = final_output_obj.get('thought_process', '')
                     raw_dump = final_output_obj
                 else:
-                    # Fallback for string output (shouldn't happen with schema)
                     raw_dump = str(final_output_obj)
             else:
                 raw_dump = 'No final output generated.'
-
-            # Evaluation
             is_correct = (parsed_choice == correct_letter)
 
             total_processed += 1

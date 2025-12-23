@@ -369,7 +369,6 @@ class RecursiveToolAgent(Runnable):
                         logger.error(f'Unknown error is occurred during invoking: {e}')
                         return None
                 outputs = []
-                is_finished = None
                 for call in result.tool_calls:
                     name, args, call_id = call['name'], call['args'], call['id']
                     if name == self.schema.__name__:
@@ -380,7 +379,6 @@ class RecursiveToolAgent(Runnable):
                             return
                     if name in self.tools_map:
                         tool_fn = self.tools_map[name]
-                        # Some tools (like search_web) don't need guard, execute directly
                         if name in self.guard.tools:
                             output = self.guard.invoke(name, args, call_id)
                         else:
@@ -389,8 +387,6 @@ class RecursiveToolAgent(Runnable):
                             except Exception as e:
                                 output = f'Tool Error: {e}'
                         outputs.append(ToolMessage(content=str(output), tool_call_id=call_id, name=name))
-                if is_finished:
-                    return is_finished
                 messages.extend(outputs)
                 recursion_count += 1
                 if self.max_recursion_depth is not None and recursion_count >= self.max_recursion_depth:

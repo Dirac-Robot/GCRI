@@ -104,19 +104,7 @@ class GCRIMetaPlanner:
         logger.info(f'Result of plan {state.plan_count} saved to: {path}')
 
     def _broadcast_state(self, state: GlobalState, stage: str):
-        """Broadcasts the current planner state to the dashboard."""
         try:
-            # We need to run async broadcast from sync context if we are in sync loop,
-            # but usually this runs in a threadpool so we need to find the event loop or just run_in_executor?
-            # Actually, manager.broadcast is async.
-            # If we are running inside fastapi (api/run -> threadpool), we can use asyncio.run if there is no loop,
-            # OR we need to access the main loop stored in backend/main.py but that's hard to reach.
-            # However, manager.broadcast simply does await connection.send_json.
-            
-            # Simple Hack: Use the running loop if available, else new loop.
-            # Since this runs in a thread (run_in_threadpool), there is NO running loop in this thread.
-            # We can use asyncio.run() safely here for a one-off async call.
-            
             data = {
                 'plan_count': state.plan_count,
                 'goal': state.goal,
@@ -126,11 +114,8 @@ class GCRIMetaPlanner:
                 'stage': stage,
                 'final_answer': state.final_answer
             }
-            
             asyncio.run(manager.broadcast({'type': 'planner_state', 'data': data}))
-        except Exception as e:
-            # Don't fail execution if dashboard is offline or error
-            # logger.warning(f"Failed to broadcast planner state: {e}")
+        except Exception:
             pass
 
     def plan(self, state: GlobalState):
@@ -151,7 +136,7 @@ class GCRIMetaPlanner:
                 'Ensure ALL required fields (e.g., answer, confidence) are populated exactly as defined.'
             )
         else:
-            schema_desc = "Provide a comprehensive text summary as the final answer."
+            schema_desc = 'Provide a comprehensive text summary as the final answer.'
         with open(template_path, 'r') as f:
             template = f.read().format(
                 goal=state.goal,
@@ -168,8 +153,6 @@ class GCRIMetaPlanner:
         }
         state_log = state.model_copy(update=next_state)
         self._save_state(state_log)
-        
-        # Broadcast after planning decision
         self._broadcast_state(state_log, 'planned')
         
         if planning.is_finished:
@@ -191,9 +174,7 @@ class GCRIMetaPlanner:
         self._check_abort()
         current_task = state.current_task
         logger.info(f'Planning Iter #{state.plan_count} | Delegating to GCRI Unit: {current_task}')
-
         self._broadcast_state(state, 'executing')
-        
         gcri_result = self.gcri_unit(task=current_task, initial_memory=state.memory, auto_commit=True)
         output = gcri_result.get('final_output', 'Task failed to produce a conclusive final output.')
         updated_memory = gcri_result.get('memory', state.memory)
@@ -202,9 +183,7 @@ class GCRIMetaPlanner:
     def compress_memory(self, state: GlobalState):
         self._check_abort()
         logger.info(f'Compress memory of #{state.plan_count}...')
-
         self._broadcast_state(state, 'compressing')
-        
         raw_constraints = state.memory.active_constraints
         template_path = self.config.templates.compression
         with open(template_path, 'r') as f:
@@ -251,13 +230,8 @@ class GCRIMetaPlanner:
         else:
             logger.info(f'Starting meta-planner for goal: {goal_or_state}')
             state = GlobalState(goal=str(goal_or_state))
-        
-        # Initial broadcast
         self._broadcast_state(state, 'start')
-        
         state = self.workflow.invoke(state)
-        
-        # Final broadcast
         self._broadcast_state(state, 'end')
         
         if state['final_answer']:

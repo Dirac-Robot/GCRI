@@ -33,11 +33,11 @@ def setup_directories():
 
 def preprocess_code(code_str: str) -> str:
     code_str = code_str.strip()
-    if code_str.startswith("```python"):
+    if code_str.startswith('```python'):
         code_str = code_str[9:]
-    elif code_str.startswith("```"):
+    elif code_str.startswith('```'):
         code_str = code_str[3:]
-    if code_str.endswith("```"):
+    if code_str.endswith('```'):
         code_str = code_str[:-3]
     return code_str.strip()
 
@@ -46,9 +46,9 @@ def run_test_case(test_program, result_queue):
     try:
         exec_globals = {}
         exec(test_program, exec_globals)
-        result_queue.put("passed")
+        result_queue.put('passed')
     except Exception as e:
-        result_queue.put(f"failed: {str(e)}")
+        result_queue.put(f'failed: {str(e)}')
 
 
 def evaluate_code(sample, completion_code):
@@ -126,7 +126,7 @@ def run_benchmark(config, num_samples=None):
                         valid_results.append(item)
                         processed_ids.add(t_id)
                     else:
-                        logger.info(f"♻️ Re-queueing Task {t_id} (Reason: Empty completion)")
+                        logger.info(f'♻️ Re-queueing Task {t_id} (Reason: Empty completion)')
                 results = valid_results
                 total_processed = len(results)
                 total_passed = sum(1 for item in results if item.get('passed', False))

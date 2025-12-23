@@ -5,6 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 import os
+import json
 import asyncio
 import threading
 from loguru import logger
@@ -57,15 +58,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
 def websocket_sink(message):
     try:
-        import json
         record = json.loads(message)
-
         if main_event_loop and main_event_loop.is_running():
              asyncio.run_coroutine_threadsafe(
                  manager.broadcast({'type': 'log', 'data': record.get('record', record)}),
                  main_event_loop
              )
-    except Exception as e:
+    except Exception:
         pass
 
 
@@ -140,16 +139,11 @@ async def abort_task():
     global current_task_thread
     if not execution_lock.locked() and current_task_thread is None:
         return {'status': 'no_task', 'message': 'No task is currently running.'}
-
     logger.warning('🛑 Abort requested by user!')
     abort_event.set()
-
-    # Cancel the asyncio task if it exists
     if current_task_thread is not None and not current_task_thread.done():
         current_task_thread.cancel()
         logger.info('Task cancellation requested.')
-
-    # Broadcast abort event to frontend
     if main_event_loop and main_event_loop.is_running():
         asyncio.run_coroutine_threadsafe(
             manager.broadcast({'type': 'log', 'data': {
@@ -203,9 +197,7 @@ async def run_task(task_request: TaskRequest):
     global gcri_instance, current_task_thread
 
     if not gcri_instance:
-         # Should not happen as we init attempts to load
          return {'error': 'GCRI system not initialized.'}
-
     target_agent = None
     if task_request.agent_mode == 'planner':
         if isinstance(gcri_instance, dict) and 'planner' in gcri_instance:
@@ -223,17 +215,11 @@ async def run_task(task_request: TaskRequest):
 
     if execution_lock.locked():
         return {'error': 'Another task is currently running. Please wait.'}
-
-    # Reset abort event for new task
     abort_event.clear()
-
-    # Set commit mode on WebCallbacks before execution
     from gcri.dashboard.backend.web_callbacks import WebCallbacks
     callbacks = WebCallbacks.get_instance()
     if callbacks:
         callbacks.set_commit_mode(task_request.commit_mode)
-
-    # Broadcast state reset event to frontend
     asyncio.run_coroutine_threadsafe(
         manager.broadcast({
             'type': 'log',
@@ -256,7 +242,6 @@ async def run_task(task_request: TaskRequest):
         global current_task_thread
         with execution_lock:
             try:
-                # Run the blocking agent call in a thread pool
                 await run_in_threadpool(target_agent, task_request.task)
             except asyncio.CancelledError:
                 logger.warning('🛑 Task cancelled by user.')
@@ -268,10 +253,7 @@ async def run_task(task_request: TaskRequest):
                     logger.error(f'Execution failed: {e}')
             finally:
                 current_task_thread = None
-
-    # Store the task so we can cancel it
     current_task_thread = asyncio.create_task(_execute_async())
-
     return {'status': 'started', 'message': 'Task execution started in background.'}
 
 
@@ -282,21 +264,26 @@ async def startup_event():
         main_event_loop = asyncio.get_running_loop()
         
         logger.info('⚙️ Initializing Unified GCRI Backend...')
-
-        # Create web callbacks with the event loop
         web_callbacks = WebCallbacks(event_loop=main_event_loop)
-
-        # Load BOTH agents
         gcri_instance = {}
-
+        config_json = os.environ.get('GCRI_CONFIG')
+        if config_json:
+            from ato.adict import ADict
+            config = ADict(json.loads(config_json))
+            logger.info(f'✅ GCRI Config loaded from GCRI_CONFIG env.')
+        else:
+            @scope
+            def get_config(config):
+                return config
+            config = get_config()
+            logger.warning('⚠️ GCRI_CONFIG env not found, using default scope config.')
         try:
-            gcri_instance['unit'] = GCRI(scope.config, abort_event=abort_event, callbacks=web_callbacks)
+            gcri_instance['unit'] = GCRI(config, abort_event=abort_event, callbacks=web_callbacks)
             logger.info('✅ GCRI Unit Instance Ready.')
         except Exception as e:
             logger.error(f'❌ Failed to load Unit Agent: {e}')
-
         try:
-            gcri_instance['planner'] = GCRIMetaPlanner(scope.config, abort_event=abort_event, callbacks=web_callbacks)
+            gcri_instance['planner'] = GCRIMetaPlanner(config, abort_event=abort_event, callbacks=web_callbacks)
             logger.info('✅ GCRIMetaPlanner Instance Ready.')
         except Exception as e:
              logger.error(f'❌ Failed to load Planner Agent: {e}')
@@ -304,9 +291,9 @@ async def startup_event():
         logger.add(websocket_sink, serialize=True, level='INFO')
         logger.info('✅ WebSocket Logger Sink Attached.')
 
-        monitoring_paths = scope.config.dashboard.monitor_directories
-        if not monitoring_paths and scope.config.project_dir:
-            monitoring_paths = [scope.config.project_dir]
+        monitoring_paths = config.dashboard.monitor_directories
+        if not monitoring_paths and config.project_dir:
+            monitoring_paths = [config.project_dir]
         if monitoring_paths:
             watcher.start(monitoring_paths)
             
