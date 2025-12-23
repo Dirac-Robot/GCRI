@@ -597,7 +597,7 @@ class GCRI:
             'feedback': integrated_feedback
         }
 
-    def __call__(self, task, initial_memory=None, auto_commit=False):
+    def __call__(self, task, initial_memory=None, commit_mode='manual'):
         """
         Execute the GCRI reasoning loop for a given task.
 
@@ -611,7 +611,7 @@ class GCRI:
         Args:
             task: Task description string or dict with state to resume.
             initial_memory: Optional StructuredMemory to start with.
-            auto_commit: If True, automatically commit winning branch.
+            commit_mode: 'manual', 'auto-accept', 'auto-reject'
 
         Returns:
             dict: Final state including 'final_output', 'best_branch_index',
@@ -674,7 +674,7 @@ class GCRI:
                             'best_branch_index': best_branch_index,
                             'final_output': result.get('final_output')
                         }
-                        if auto_commit or self.callbacks.on_commit_request(commit_context):
+                        if commit_mode == 'auto-accept' or (commit_mode == 'manual' and self.callbacks.on_commit_request(commit_context)):
                             self.sandbox.commit_winning_branch(winning_branch_path)
                         else:
                             logger.info('Changes discarded.')
