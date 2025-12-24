@@ -18,7 +18,7 @@ from gcri.config import scope
 DATASET_HF_ID = "eturok/ARC-AGI-2"
 
 # Target Split: 'train' (1000 tasks) or 'test' (112 eval tasks)
-TARGET_SPLIT = "test"
+TARGET_SPLIT = "eval"
 BENCHMARK_DIR = 'benchmark_results/arc_agi_2'
 
 
