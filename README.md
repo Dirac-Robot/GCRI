@@ -103,23 +103,7 @@ Failed attempts are converted into constraints, making the system smarter with e
 
 ---
 
-## Benchmark Results
 
-GCRI has been evaluated on various challenging benchmarks including coding, mathematics, and reasoning tasks:
-
-<p align="center">
-  <img src="assets/GCRI-Benchmarks.png" alt="GCRI Benchmark Results" width="800"/>
-</p>
-
-The benchmark results demonstrate GCRI's competitive performance across:
-- **BigCodeBench**: Real-world coding task completion
-- **GPQA**: Graduate-level science questions
-- **TheoremQA**: Mathematical theorem proving
-- **ProofWriter**: Logical reasoning and proof generation
-
-GCRI's multi-agent architecture with competitive iteration enables it to tackle complex reasoning and code generation tasks that require multiple verification passes.
-
----
 
 ## Quick Start
 
