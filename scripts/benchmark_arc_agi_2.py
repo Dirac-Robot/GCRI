@@ -3,7 +3,6 @@ import os
 import re
 import ast
 import numpy as np
-import numpy as np
 from datasets import load_dataset
 from dotenv import load_dotenv
 from loguru import logger
