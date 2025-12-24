@@ -108,9 +108,10 @@ def load_arc_data(split_name, num_samples=None):
     Load ARC-AGI-2 data from eturok/ARC-AGI-2 HuggingFace dataset.
     Dataset structure:
       - id: task identifier
-      - examples: list of {input, output} pairs for demonstration
-      - questions: list of {input} for test
-      - answers: list of {output} for test ground truth
+      - example_inputs: list of input grids for demonstration
+      - example_outputs: list of output grids for demonstration
+      - question_inputs: list of input grids for test
+      - question_outputs: list of output grids for test ground truth
     """
     dataset_items = []
 
@@ -122,14 +123,12 @@ def load_arc_data(split_name, num_samples=None):
 
         for item in ds:
             train_pairs = []
-            for ex in item['examples']:
-                train_pairs.append({'input': ex['input'], 'output': ex['output']})
+            for inp, out in zip(item['example_inputs'], item['example_outputs']):
+                train_pairs.append({'input': inp, 'output': out})
 
             test_pairs = []
-            questions = item['questions']
-            answers = item['answers']
-            for q, a in zip(questions, answers):
-                test_pairs.append({'input': q['input'], 'output': a['output']})
+            for inp, out in zip(item['question_inputs'], item['question_outputs']):
+                test_pairs.append({'input': inp, 'output': out})
 
             dataset_items.append({
                 'id': item['id'],
