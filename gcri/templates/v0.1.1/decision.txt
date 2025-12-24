@@ -24,11 +24,11 @@ PROCEDURE:
 
 3. FINAL DECISION:
    - True: at least one VALID branch exists
-   - False: no VALID branch, or missing details
+   - False: no VALID branch
 
 4. IF True:
-   - Set best_branch_index (0-based) to the VALID branch
-   - DO NOT copy/move files yourself. System auto-deploys from selected branch.
+   - MANDATORY: Set best_branch_index to 0-based VALID branch index
+   - DO NOT copy/move files. System auto-deploys.
    - final_output: {schema_desc}
 
 5. IF False:

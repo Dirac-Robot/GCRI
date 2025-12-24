@@ -1,8 +1,8 @@
 from enum import Enum
 from typing import List, Literal
-from typing import Optional, Any
+from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic import create_model
 
 
@@ -107,7 +107,8 @@ class DecisionProtoType(BaseModel):
     decision: bool = Field(..., description='True if at least one branch is valid and ready as final answer')
     best_branch_index: int = Field(
         default=-1,
-        description='0-based index of the winning branch. Required if decision is True.'
+        ge=-1,
+        description='0-based index of the winning branch. MUST be >= 0 when decision is True.'
     )
     global_feedback: Optional[str] = Field(
         None,
@@ -115,11 +116,16 @@ class DecisionProtoType(BaseModel):
     )
     branch_evaluations: List[BranchAnalysis] = Field(..., description='Detailed evaluation list for each branch')
 
+    @model_validator(mode='after')
+    def validate_branch_index(self):
+        if self.decision and self.best_branch_index < 0:
+            raise ValueError('best_branch_index must be >= 0 when decision is True')
+        return self
+
 
 class PlanProtoType(BaseModel):
     thought: str = Field(description='Reasoning for the current analysis and plan formulation')
     next_task: Optional[str] = Field(description='Specific single task to be performed next (None if finished)')
-    # final_answer: Optional[Any] = Field(description='Final answer if the goal is achieved (None if in progress)')
     is_finished: bool = Field(description='Whether the goal has been achieved')
 
 
