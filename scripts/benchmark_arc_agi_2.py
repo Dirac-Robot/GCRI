@@ -2,7 +2,7 @@ import json
 import os
 import re
 import ast
-import glob
+import numpy as np
 import numpy as np
 from datasets import load_dataset
 from dotenv import load_dotenv
@@ -15,16 +15,11 @@ from gcri.config import scope
 
 # --- Configuration ---
 
-# Option A: Stable HuggingFace Mirror
-DATASET_HF_ID = "lordspline/arc-agi"
+# HuggingFace Dataset: ARC-AGI-2 (1000 train, 112 eval)
+DATASET_HF_ID = "eturok/ARC-AGI-2"
 
-# Option B: Local Directory (Fallback)
-# Structure: data/arc/training/*.json
-LOCAL_DATA_PATH = "data/arc"
-
-# Target Split: 'training' (400 tasks) or 'evaluation' (400 tasks)
-# Note: 'test' is usually private/hidden.
-TARGET_SPLIT = "evaluation"
+# Target Split: 'train' (1000 tasks) or 'test' (112 eval tasks)
+TARGET_SPLIT = "test"
 BENCHMARK_DIR = 'benchmark_results/arc_agi_2'
 
 
@@ -111,55 +106,42 @@ def check_answer(pred_grid, gt_grid):
 
 def load_arc_data(split_name, num_samples=None):
     """
-    Robust data loader: Tries HF first, falls back to local JSONs.
+    Load ARC-AGI-2 data from eturok/ARC-AGI-2 HuggingFace dataset.
+    Dataset structure:
+      - id: task identifier
+      - examples: list of {input, output} pairs for demonstration
+      - questions: list of {input} for test
+      - answers: list of {output} for test ground truth
     """
     dataset_items = []
 
-    # 1. Try Hugging Face
     try:
-        logger.info(f"☁️ Attempting to load from HuggingFace: {DATASET_HF_ID} [{split_name}]")
+        logger.info(f"☁️ Loading from HuggingFace: {DATASET_HF_ID} [{split_name}]")
         ds = load_dataset(DATASET_HF_ID, split=split_name)
         if num_samples:
             ds = ds.select(range(min(len(ds), num_samples)))
 
         for item in ds:
-            # lordspline/arc-agi structure is usually 'train', 'test' keys inside
-            # Normalize to standard dict
-            dataset_items.append(
-                {
-                    'id': item.get('id', 'unknown'),
-                    'train': item['train'],
-                    'test': item['test']
-                }
-            )
+            train_pairs = []
+            for ex in item['examples']:
+                train_pairs.append({'input': ex['input'], 'output': ex['output']})
+
+            test_pairs = []
+            questions = item['questions']
+            answers = item['answers']
+            for q, a in zip(questions, answers):
+                test_pairs.append({'input': q['input'], 'output': a['output']})
+
+            dataset_items.append({
+                'id': item['id'],
+                'train': train_pairs,
+                'test': test_pairs
+            })
+        logger.info(f"✅ Loaded {len(dataset_items)} tasks from {DATASET_HF_ID}")
         return dataset_items
     except Exception as e:
-        logger.warning(f"⚠️ Failed to load HF dataset: {e}")
-
-    # 2. Try Local Fallback
-    local_dir = os.path.join(LOCAL_DATA_PATH, split_name)
-    logger.info(f"📂 Attempting to load from local disk: {local_dir}")
-    if os.path.exists(local_dir):
-        files = glob.glob(os.path.join(local_dir, '*.json'))
-        files.sort()
-        if num_samples:
-            files = files[:num_samples]
-
-        for fpath in files:
-            with open(fpath, 'r') as f:
-                data = json.load(f)
-                task_id = os.path.basename(fpath).replace('.json', '')
-                dataset_items.append(
-                    {
-                        'id': task_id,
-                        'train': data['train'],
-                        'test': data['test']
-                    }
-                )
-        return dataset_items
-
-    logger.error("❌ Could not load dataset from Cloud or Disk.")
-    return []
+        logger.error(f"❌ Failed to load dataset: {e}")
+        return []
 
 
 # --- Main Benchmark Loop ---
