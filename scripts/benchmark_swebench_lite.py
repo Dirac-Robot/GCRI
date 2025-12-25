@@ -22,6 +22,7 @@ def get_preset_name(config):
 
 
 RESULT_FILE = os.path.join(BENCHMARK_DIR, f'swebench_lite_results_{get_preset_name()}.json')
+PREDICTIONS_FILE = os.path.join(BENCHMARK_DIR, f'predictions_{get_preset_name()}.jsonl')
 
 
 class SWEBenchResult(BaseModel):
@@ -92,6 +93,31 @@ def calculate_patch_similarity(pred_patch: str, gold_patch: str) -> tuple[float,
     return f1, f'F1: {f1:.2%} (P: {precision:.2%}, R: {recall:.2%})'
 
 
+def save_prediction_jsonl(predictions_file: str, instance_id: str, model_patch: str):
+    """Append a prediction to JSONL file in SWE-bench format."""
+    prediction = {
+        "instance_id": instance_id,
+        "model_patch": model_patch,
+        "model_name_or_path": "GCRI"
+    }
+    with open(predictions_file, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(prediction, ensure_ascii=False)+'\n')
+
+
+def load_existing_predictions(predictions_file: str) -> set:
+    """Load existing predictions to enable resumption."""
+    existing_ids = set()
+    if os.path.exists(predictions_file):
+        with open(predictions_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    pred = json.loads(line.strip())
+                    existing_ids.add(pred.get('instance_id'))
+                except:
+                    continue
+    return existing_ids
+
+
 @scope
 def run_benchmark(config, num_samples=None):
     config.protocols.force_output = True
@@ -119,6 +145,9 @@ def run_benchmark(config, num_samples=None):
     processed_ids = set()
     total_processed = 0
     total_f1_sum = 0.0
+
+    prediction_ids = load_existing_predictions(PREDICTIONS_FILE)
+    logger.info(f'📝 Found {len(prediction_ids)} existing predictions in JSONL.')
 
     if os.path.exists(RESULT_FILE):
         try:
@@ -194,6 +223,10 @@ def run_benchmark(config, num_samples=None):
             else:
                 raw_dump = 'No final output generated.'
 
+            if instance_id not in prediction_ids:
+                save_prediction_jsonl(PREDICTIONS_FILE, instance_id, generated_patch)
+                logger.info(f'💾 Saved prediction to {PREDICTIONS_FILE}')
+
             f1_score, eval_message = calculate_patch_similarity(generated_patch, gold_patch)
 
             total_processed += 1
@@ -235,11 +268,13 @@ def run_benchmark(config, num_samples=None):
     final_avg_f1 = total_f1_sum/len(dataset) if len(dataset) > 0 else 0
     logger.info(f'✅ SWE-bench Lite completed. Average F1: {final_avg_f1:.2%}')
     logger.info(f'📄 Results saved to {RESULT_FILE}')
+    logger.info(f'📝 Predictions saved to {PREDICTIONS_FILE}')
     logger.info(
-        '⚠️ Note: This measures patch similarity. '
-        'For official evaluation, run patches through SWE-bench harness with Docker.'
+        '\n🐳 To run Docker evaluation:\n'
+        f'   python scripts/evaluate_swebench_docker.py --predictions {PREDICTIONS_FILE}'
     )
 
 
 if __name__ == '__main__':
     run_benchmark()
+
