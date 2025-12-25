@@ -42,14 +42,33 @@ def setup_directories():
 
 
 def preprocess_code(code_str: str) -> str:
+    if not code_str:
+        return ''
+
     code_str = code_str.strip()
+
     if code_str.startswith('```python'):
         code_str = code_str[9:]
+    elif code_str.startswith('```py'):
+        code_str = code_str[5:]
     elif code_str.startswith('```'):
         code_str = code_str[3:]
+
     if code_str.endswith('```'):
         code_str = code_str[:-3]
-    return code_str.strip()
+
+    code_str = code_str.strip()
+
+    lines = code_str.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        if line.rstrip().endswith('\\'):
+            line = line.rstrip()
+        cleaned_lines.append(line)
+
+    code_str = '\n'.join(cleaned_lines)
+
+    return code_str
 
 
 def run_test_case(test_program, result_queue):
