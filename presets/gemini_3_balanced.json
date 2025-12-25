@@ -6,7 +6,7 @@
       "parameters": {
         "model_provider": "google_genai",
         "max_tokens": 51200,
-        "reasoning_effort": "medium",
+        "thinking_level": "medium",
         "temperature": 0.1
       }
     },
@@ -15,7 +15,6 @@
       "parameters": {
         "model_provider": "google_genai",
         "max_tokens": 51200,
-        "reasoning_effort": "medium",
         "temperature": 0
       }
     },
@@ -24,7 +23,7 @@
       "parameters": {
         "model_provider": "google_genai",
         "max_tokens": 51200,
-        "reasoning_effort": "medium",
+        "thinking_level": "medium",
         "temperature": 0.7
       }
     },
@@ -35,7 +34,7 @@
           "parameters": {
             "model_provider": "google_genai",
             "max_tokens": 51200,
-            "reasoning_effort": "medium",
+            "thinking_level": "medium",
             "temperature": 0.2
           },
           "gcri_options": {
@@ -49,7 +48,7 @@
           "parameters": {
             "model_provider": "google_genai",
             "max_tokens": 51200,
-            "reasoning_effort": "medium",
+            "thinking_level": "medium",
             "temperature": 0.2
           },
           "gcri_options": {
@@ -63,7 +62,7 @@
           "parameters": {
             "model_provider": "google_genai",
             "max_tokens": 51200,
-            "reasoning_effort": "medium",
+            "thinking_level": "medium",
             "temperature": 0
           },
           "gcri_options": {
@@ -79,7 +78,7 @@
           "parameters": {
             "model_provider": "google_genai",
             "max_tokens": 51200,
-            "reasoning_effort": "medium",
+            "thinking_level": "medium",
             "temperature": 0.3
           },
           "gcri_options": {
@@ -93,7 +92,7 @@
           "parameters": {
             "model_provider": "google_genai",
             "max_tokens": 51200,
-            "reasoning_effort": "medium",
+            "thinking_level": "medium",
             "temperature": 0.2
           },
           "gcri_options": {
@@ -107,7 +106,7 @@
           "parameters": {
             "model_provider": "google_genai",
             "max_tokens": 51200,
-            "reasoning_effort": "medium",
+            "thinking_level": "medium",
             "temperature": 0
           },
           "gcri_options": {
@@ -123,6 +122,7 @@
       "parameters": {
         "model_provider": "google_genai",
         "max_tokens": 51200,
+        "thinking_level": "medium",
         "temperature": 0
       },
       "gcri_options": {
