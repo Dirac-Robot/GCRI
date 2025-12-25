@@ -59,6 +59,9 @@ def preprocess_code(code_str: str) -> str:
 
     code_str = code_str.strip()
 
+    code_str = code_str.replace('\\"', '"')
+    code_str = code_str.replace("\\'", "'")
+
     lines = code_str.split('\n')
     cleaned_lines = []
     for line in lines:
