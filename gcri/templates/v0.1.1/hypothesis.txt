@@ -19,7 +19,7 @@ CRITICAL RULES:
 4. HINTS = HARD CONSTRAINTS: Follow strategy hints precisely.
 
 5. OUTPUT FORMAT by task type:
-   - Code → use write_file, output: [entrypoint, files_written, run_command, notes]
+   - Code → use write_file, output: [entrypoint (primary result first), files_written, run_command, notes]
    - Math/Logic → complete derivation/proof
    - Writing → full text
    - Design → full proposal

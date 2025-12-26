@@ -12,7 +12,16 @@ from gcri.graphs.gcri_unit import GCRI
 from gcri.config import scope
 
 BENCHMARK_DIR = 'benchmark_results/gpqa'
-RESULT_FILE = os.path.join(BENCHMARK_DIR, 'gpqa_diamond_results.json')
+
+@scope
+def get_preset_name(config):
+    if config.get('custom_config_path'):
+        return os.path.splitext(os.path.basename(config.custom_config_path))[0]
+    return 'none'
+
+
+RESULT_FILE = os.path.join(BENCHMARK_DIR, f'gpqa_diamond_results_{get_preset_name()}.json')
+
 DATASET_NAME = 'idavidrein/gpqa'
 DATASET_SUBSET = 'gpqa_diamond'
 
