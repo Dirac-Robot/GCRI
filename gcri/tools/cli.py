@@ -341,8 +341,14 @@ class RecursiveToolAgent(Runnable):
     def __init__(self, agent, schema: Type[BaseModel], tools: List[Any], work_dir: str = None, max_recursion_depth=50):
         self.agent = agent
         self.schema = schema
-        self.tools_map = {t.name: t for t in tools}
-        self.model_with_tools = self.agent.bind_tools(tools+[schema])
+        seen_names = set()
+        unique_tools = []
+        for t in tools:
+            if t.name not in seen_names:
+                unique_tools.append(t)
+                seen_names.add(t.name)
+        self.tools_map = {t.name: t for t in unique_tools}
+        self.model_with_tools = self.agent.bind_tools(unique_tools+[schema])
         self.guard = SHARED_GUARD
         self.work_dir = work_dir
         self.max_recursion_depth = max_recursion_depth
