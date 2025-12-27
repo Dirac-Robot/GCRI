@@ -153,7 +153,7 @@ def local_python_interpreter(code: str) -> str:
 
 
 @tool
-def search_web(query: str, max_results=5) -> str:
+def search_web(query: str, max_results: int = 5) -> str:
     """Searches the web using DuckDuckGo."""
     try:
         with DDGS() as ddgs:

@@ -1,42 +1,21 @@
-import os
 import json
-from tqdm import tqdm
+import os
+
+from google import genai
+from google.genai import types
 from datasets import load_dataset
 from dotenv import load_dotenv
 from loguru import logger
-from pydantic import BaseModel, Field
-
-from gcri.config import scope
-from gcri.graphs.gcri_unit import GCRI
-
-
-@scope
-def get_preset_name(config):
-    if config.get('custom_config_path'):
-        return os.path.splitext(os.path.basename(config.custom_config_path))[0]
-    return 'none'
-
+from tqdm import tqdm
 
 BENCHMARK_DIR = 'benchmark_results/hle_text_only'
-RESULT_FILE = os.path.join(BENCHMARK_DIR, f'hle_results_{get_preset_name()}.json')
+RESULT_FILE = os.path.join(BENCHMARK_DIR, 'hle_results_gemini3_medium.json')
+MODEL_NAME = 'gemini-3-flash-preview'
+THINKING_LEVEL = 'medium'
 
 
-class HLEResult(BaseModel):
-    explanation: str = Field(
-        ...,
-        description='A detailed step-by-step explanation and reasoning for the answer choice.'
-    )
-    answer: str = Field(
-        ...,
-        description='The specific chosen answer (e.g., option letter, number, or short phrase).'
-    )
-    confidence: str = Field(
-        ...,
-        description='Confidence score between 0% and 100% (e.g., "95%").'
-    )
-
-
-def setup_directories():
+def setup():
+    load_dotenv()
     os.makedirs(BENCHMARK_DIR, exist_ok=True)
 
 
@@ -60,14 +39,34 @@ def check_answer(parsed_answer: str, ground_truth: str) -> bool:
     return False
 
 
-@scope
-def run_benchmark(config, num_samples=None):
-    config.protocols.force_output = True
-    load_dotenv()
-    setup_directories()
+def generate_answer(client, question: str) -> str:
+    task_prompt = (
+        f'You are taking "Humanity\'s Last Exam". Solve the following problem.\n'
+        f'Question: {question}\n\n'
+        f'Provide your answer directly and concisely. Just the final answer, no explanation needed.'
+    )
 
-    logger.info('🤖 GCRI Worker Initializing for HLE Benchmark (Text Only) with Custom Schema...')
-    worker = GCRI(config, schema=HLEResult)
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=task_prompt,
+            config=types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(thinking_level=THINKING_LEVEL),
+                temperature=0.7,
+                max_output_tokens=2048,
+            )
+        )
+        return response.text.strip() if response.text else ''
+    except Exception as e:
+        logger.error(f'Generation error: {e}')
+        return ''
+
+
+def run_benchmark(num_samples=None):
+    setup()
+
+    logger.info(f'🤖 Initializing {MODEL_NAME} with thinking_level={THINKING_LEVEL}...')
+    client = genai.Client()
 
     logger.info('📚 Loading Humanity\'s Last Exam dataset...')
     try:
@@ -106,7 +105,7 @@ def run_benchmark(config, num_samples=None):
         except json.JSONDecodeError:
             logger.warning('⚠️ Result file is corrupt. Starting fresh.')
 
-    for idx, item in tqdm(enumerate(dataset), total=len(dataset), desc='Benchmarking'):
+    for idx, item in tqdm(enumerate(dataset), total=len(dataset), desc=f'HLE ({MODEL_NAME})'):
         problem_id = str(item.get('id', idx))
 
         if problem_id in processed_ids:
@@ -116,32 +115,8 @@ def run_benchmark(config, num_samples=None):
             question = item.get('question', '')
             answer_key = item.get('answer', '')
 
-            task_prompt = (
-                f'You are taking "Humanity\'s Last Exam". Solve the following problem.\n'
-                f'Question: {question}\n\n'
-                f'Provide a robust explanation and the final answer.'
-            )
-
             logger.info(f'▶ Running Task ID: {problem_id}')
-
-            output_state = worker(task_prompt, commit_mode='auto-reject')
-            final_output_obj = output_state.get('final_output')
-
-            parsed_answer = ''
-            parsed_explanation = ''
-            parsed_confidence = ''
-            raw_dump = None
-
-            if final_output_obj:
-                if isinstance(final_output_obj, dict):
-                    parsed_answer = final_output_obj.get('answer', '')
-                    parsed_explanation = final_output_obj.get('explanation', '')
-                    parsed_confidence = final_output_obj.get('confidence', '')
-                    raw_dump = final_output_obj
-                else:
-                    raw_dump = str(final_output_obj)
-            else:
-                raw_dump = 'No final output generated.'
+            parsed_answer = generate_answer(client, question)
 
             is_correct = check_answer(parsed_answer, answer_key)
 
@@ -156,18 +131,12 @@ def run_benchmark(config, num_samples=None):
 
             result_entry = {
                 'id': problem_id,
-                'question': question,
+                'question': question[:500],
                 'ground_truth': answer_key,
-                'raw_output': raw_dump,
                 'parsed_answer': parsed_answer,
-                'parsed_explanation': parsed_explanation,
-                'confidence': parsed_confidence,
                 'is_correct': is_correct,
-                'full_state': {
-                    'best_branch': output_state.get('best_branch_index'),
-                    'decision': output_state.get('decision'),
-                    'iterations': output_state.get('count', 0)
-                }
+                'model': MODEL_NAME,
+                'thinking_level': THINKING_LEVEL
             }
             results.append(result_entry)
 
