@@ -153,11 +153,11 @@ def local_python_interpreter(code: str) -> str:
 
 
 @tool
-def search_web(query: str, max_results: int = 5) -> str:
+def search_web(query: str) -> str:
     """Searches the web using DuckDuckGo."""
     try:
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
+            results = list(ddgs.text(query, max_results=5))
             if not results:
                 return 'No results found.'
             formatted = []

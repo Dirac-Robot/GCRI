@@ -2,12 +2,28 @@ import json
 import os
 
 from datasets import load_dataset
+from ddgs import DDGS
 from dotenv import load_dotenv
+from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from loguru import logger
 from tqdm import tqdm
 
-from gcri.tools.cli import search_web
+
+@tool
+def search_web(query: str) -> str:
+    """Search the web for information about a given query."""
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=5))
+            if not results:
+                return 'No results found.'
+            formatted = []
+            for r in results:
+                formatted.append(f"Title: {r['title']}\nLink: {r['href']}\nSnippet: {r['body']}")
+            return '\n---\n'.join(formatted)
+    except Exception as e:
+        return f'Search Error: {e}'
 
 DATASET_HF_ID = "openai/BrowseCompLongContext"
 BENCHMARK_DIR = 'benchmark_results/browsecomp'
@@ -54,7 +70,9 @@ def check_answer(model_answer: str, ground_truth: str) -> tuple[bool, str]:
     return False, f'Mismatch'
 
 
-def generate_answer(llm_with_tools, question: str) -> tuple[str, str]:
+def generate_answer(llm_with_tools, question: str, max_iterations: int = 5) -> tuple[str, str]:
+    from langchain_core.messages import HumanMessage, ToolMessage
+
     task_prompt = (
         f'You are an expert web researcher with exceptional information-finding abilities.\n'
         f'Answer the following challenging question that requires deep web research.\n\n'
@@ -63,14 +81,40 @@ def generate_answer(llm_with_tools, question: str) -> tuple[str, str]:
         f'Provide a precise, factual answer. Be concise and direct.'
     )
 
+    tools_map = {'search_web': search_web}
+    messages = [HumanMessage(content=task_prompt)]
+    full_response = ''
+
     try:
-        response = llm_with_tools.invoke(task_prompt)
-        content = response.content if hasattr(response, 'content') else response
-        if isinstance(content, list):
-            response_text = ' '.join(str(c) for c in content)
-        else:
-            response_text = str(content)
-        return response_text.strip(), response_text
+        for _ in range(max_iterations):
+            response = llm_with_tools.invoke(messages)
+            messages.append(response)
+
+            if not response.tool_calls:
+                content = response.content if hasattr(response, 'content') else response
+                if isinstance(content, list):
+                    full_response = ' '.join(str(c) for c in content)
+                else:
+                    full_response = str(content)
+                return full_response.strip(), full_response
+
+            for tool_call in response.tool_calls:
+                tool_name = tool_call['name']
+                tool_args = tool_call['args']
+                call_id = tool_call['id']
+
+                if tool_name in tools_map:
+                    try:
+                        tool_result = tools_map[tool_name].invoke(tool_args)
+                        logger.debug(f'🔍 Tool {tool_name} called with {tool_args}')
+                    except Exception as e:
+                        tool_result = f'Tool Error: {e}'
+                else:
+                    tool_result = f'Unknown tool: {tool_name}'
+
+                messages.append(ToolMessage(content=str(tool_result), tool_call_id=call_id, name=tool_name))
+
+        return full_response.strip(), 'Max iterations reached'
     except Exception as e:
         logger.error(f'Generation error: {e}')
         return '', str(e)
