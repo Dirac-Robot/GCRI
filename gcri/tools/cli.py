@@ -157,12 +157,12 @@ def search_web(query: str) -> str:
     """Searches the web using DuckDuckGo."""
     try:
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=5))
+            results = list(ddgs.text(query, max_results=10))
             if not results:
                 return 'No results found.'
             formatted = []
             for r in results:
-                formatted.append(f'Title: {r['title']}\nLink: {r['href']}\nSnippet: {r['body']}')
+                formatted.append(f'Title: {r["title"]}\nLink: {r["href"]}\nSnippet: {r["body"]}')
             return '\n---\n'.join(formatted)
     except Exception as e:
         return f'Search Error: {e}'
@@ -341,13 +341,8 @@ class RecursiveToolAgent(Runnable):
     def __init__(self, agent, schema: Type[BaseModel], tools: List[Any], work_dir: str = None, max_recursion_depth=50):
         self.agent = agent
         self.schema = schema
-        seen_names = set()
-        unique_tools = []
-        for t in tools:
-            if t.name not in seen_names:
-                unique_tools.append(t)
-                seen_names.add(t.name)
-        self.tools_map = {t.name: t for t in unique_tools}
+        self.tools_map = {t.name: t for t in tools}
+        unique_tools = list({t.name: t for t in tools}.values())
         self.model_with_tools = self.agent.bind_tools(unique_tools+[schema])
         self.guard = SHARED_GUARD
         self.work_dir = work_dir

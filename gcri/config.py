@@ -243,6 +243,155 @@ def gpt_4_1_based(config):
 
 
 @scope.observe()
+def gemini_based(config):
+    config.update(
+        {
+            'preset_name': 'gemini_balanced',
+            'agents': {
+                'planner': {
+                    'model_id': 'gemini-3-flash-preview',
+                    'parameters': {
+                        'model_provider': 'google_genai',
+                        'max_tokens': 51200,
+                        'thinking_level': 'medium',
+                        'temperature': 0.1
+                    }
+                },
+                'compression': {
+                    'model_id': 'gemini-2.5-flash-lite',
+                    'parameters': {
+                        'model_provider': 'google_genai',
+                        'max_tokens': 51200,
+                        'temperature': 0
+                    }
+                },
+                'strategy_generator': {
+                    'model_id': 'gemini-3-flash-preview',
+                    'parameters': {
+                        'model_provider': 'google_genai',
+                        'max_tokens': 51200,
+                        'thinking_level': 'medium',
+                        'temperature': 0.7
+                    }
+                },
+                'branches': [
+                    {
+                        'hypothesis': {
+                            'model_id': 'gemini-3-flash-preview',
+                            'parameters': {
+                                'model_provider': 'google_genai',
+                                'max_tokens': 51200,
+                                'thinking_level': 'medium',
+                                'temperature': 0.2
+                            },
+                            'gcri_options': {
+                                'use_code_tools': True,
+                                'use_web_search': True,
+                                'max_recursion_depth': None
+                            }
+                        },
+                        'reasoning': {
+                            'model_id': 'gemini-3-flash-preview',
+                            'parameters': {
+                                'model_provider': 'google_genai',
+                                'max_tokens': 51200,
+                                'thinking_level': 'medium',
+                                'temperature': 0.2
+                            },
+                            'gcri_options': {
+                                'use_code_tools': True,
+                                'use_web_search': True,
+                                'max_recursion_depth': None
+                            }
+                        },
+                        'verification': {
+                            'model_id': 'gemini-3-flash-preview',
+                            'parameters': {
+                                'model_provider': 'google_genai',
+                                'max_tokens': 51200,
+                                'thinking_level': 'medium',
+                                'temperature': 0
+                            },
+                            'gcri_options': {
+                                'use_code_tools': True,
+                                'use_web_search': True,
+                                'max_recursion_depth': None
+                            }
+                        }
+                    },
+                    {
+                        'hypothesis': {
+                            'model_id': 'gemini-3-flash-preview',
+                            'parameters': {
+                                'model_provider': 'google_genai',
+                                'max_tokens': 51200,
+                                'thinking_level': 'medium',
+                                'temperature': 0.3
+                            },
+                            'gcri_options': {
+                                'use_code_tools': True,
+                                'use_web_search': True,
+                                'max_recursion_depth': None
+                            }
+                        },
+                        'reasoning': {
+                            'model_id': 'gemini-3-flash-preview',
+                            'parameters': {
+                                'model_provider': 'google_genai',
+                                'max_tokens': 51200,
+                                'thinking_level': 'medium',
+                                'temperature': 0.2
+                            },
+                            'gcri_options': {
+                                'use_code_tools': True,
+                                'use_web_search': True,
+                                'max_recursion_depth': None
+                            }
+                        },
+                        'verification': {
+                            'model_id': 'gemini-3-flash-preview',
+                            'parameters': {
+                                'model_provider': 'google_genai',
+                                'max_tokens': 51200,
+                                'thinking_level': 'medium',
+                                'temperature': 0
+                            },
+                            'gcri_options': {
+                                'use_code_tools': True,
+                                'use_web_search': True,
+                                'max_recursion_depth': None
+                            }
+                        }
+                    }
+                ],
+                'decision': {
+                    'model_id': 'gemini-3-flash-preview',
+                    'parameters': {
+                        'model_provider': 'google_genai',
+                        'max_tokens': 51200,
+                        'thinking_level': 'medium',
+                        'temperature': 0
+                    },
+                    'gcri_options': {
+                        'use_code_tools': True,
+                        'use_web_search': True,
+                        'max_recursion_depth': None
+                    }
+                },
+                'memory': {
+                    'model_id': 'gemini-2.5-flash-lite',
+                    'parameters': {
+                        'model_provider': 'google_genai',
+                        'max_tokens': 51200,
+                        'temperature': 0
+                    }
+                }
+            }
+        }
+    )
+
+
+@scope.observe()
 def local_qwen(config):
     config.agents.endpoint_url = 'http://localhost:8000/v1'
 
