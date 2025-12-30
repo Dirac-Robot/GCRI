@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+# Install common Python packages for agent tasks
+RUN pip install --no-cache-dir \
+    numpy \
+    pandas \
+    scipy \
+    sympy \
+    requests \
+    beautifulsoup4
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command
+CMD ["python", "--version"]

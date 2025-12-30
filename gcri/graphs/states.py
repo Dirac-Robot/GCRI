@@ -106,7 +106,7 @@ class BranchState(BaseModel):
     State for a single reasoning branch within an iteration.
 
     Contains the branch-specific strategy, hypothesis under development,
-    and isolated workspace directory for file operations.
+    and isolated Docker container for execution.
     """
     task_in_branch: str = Field(..., description='Task description for this branch')
     intent_analysis_in_branch: str = Field(default='', description='Locked user intent for this branch')
@@ -119,7 +119,7 @@ class BranchState(BaseModel):
     index: int = Field(..., description='Branch index (0-based)')
     hypothesis: Optional[str] = Field(default=None, description='Current hypothesis being developed')
     reasoning: Optional[str] = Field(default=None, description='Reasoning evaluation of the hypothesis')
-    work_dir: str = Field(..., description='Isolated workspace directory for file operations')
+    container_id: str = Field(..., description='Docker container ID for isolated execution')
     results: List[HypothesisResult] = Field(default_factory=list, description='Results from this branch')
 
 

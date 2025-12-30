@@ -118,6 +118,13 @@ def default(config):
         port=8000,
         monitor_directories=[]  # User can override this with paths to watch
     )
+    config.sandbox = dict(
+        image='python:3.11-slim',
+        timeout=60,
+        memory_limit='512m',
+        cpu_limit=1.0,
+        network_mode='none'
+    )
 
 
 @scope.observe(lazy=True)

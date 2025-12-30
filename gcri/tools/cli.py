@@ -1,9 +1,7 @@
 import ast
 import os
-import subprocess
 import sys
 import threading
-import uuid
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, List, Type
@@ -22,18 +20,19 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 
 from gcri.config import scope
+from gcri.tools.docker_sandbox import get_docker_sandbox
 
 console = Console(force_terminal=True)
 
 
 class GlobalVariables:
-    CWD_VAR = None
+    CONTAINER_VAR = None
     AUTO_MODE_FILE = None
 
 
 @scope
 def set_global_variables(config):
-    GlobalVariables.CWD_VAR = ContextVar('cwd', default=scope.config.project_dir)
+    GlobalVariables.CONTAINER_VAR = ContextVar('container_id', default=None)
     GlobalVariables.AUTO_MODE_FILE = os.path.join(config.project_dir, '.gcri_auto_mode')
 
 
@@ -45,19 +44,8 @@ def get_input(message):
     return sys.stdin.buffer.readline().decode('utf-8', errors='ignore').strip()
 
 
-def get_cwd():
-    dir_path = GlobalVariables.CWD_VAR.get()
-    os.makedirs(dir_path, exist_ok=True)
-    return dir_path
-
-
-def get_environment_with_python_path(cwd):
-    environment = os.environ.copy()
-    prev_python_path = environment.get('PYTHONPATH', '')
-    next_python_path = f'{cwd}{os.pathsep}{scope.config.project_dir}{os.pathsep}{prev_python_path}'
-    environment['PYTHONPATH'] = next_python_path
-    environment['PYTHONUNBUFFERED'] = '1'
-    return environment
+def get_container_id():
+    return GlobalVariables.CONTAINER_VAR.get()
 
 
 @scope
@@ -70,86 +58,51 @@ def _get_black_and_white_lists(config):
 
 @tool
 def execute_shell_command(command: str) -> str:
-    """Executes a shell command."""
-    cwd = get_cwd()
-    environment = get_environment_with_python_path(cwd)
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=cwd,
-            env=environment
-        )
-        if result.returncode == 0:
-            return result.stdout if result.stdout.strip() else '(Success, no output)'
-        return f'Exit Code {result.returncode}:\n{result.stderr}'
-    except subprocess.TimeoutExpired:
-        return 'Error: Command timed out.'
-    except Exception as e:
-        return f'Error: {e}'
+    """Executes a shell command in the Docker container."""
+    container_id = get_container_id()
+    if not container_id:
+        return 'Error: No Docker container available. Run within GCRI context.'
+    docker_sandbox = get_docker_sandbox(scope.config)
+    return docker_sandbox.execute_command(container_id, command)
 
 
 @tool
 def read_file(file_path: str) -> str:
-    """Reads the content of a file."""
-    cwd = get_cwd()
-    target = os.path.join(cwd, file_path)
-    if not os.path.exists(target):
-        return f'Error: File "{file_path}" not found in {cwd}.'
-    try:
-        with open(target, 'r', encoding='utf-8') as f:
-            return f.read()
-    except Exception as e:
-        return f'Error: {e}'
+    """Reads the content of a file from the Docker container."""
+    container_id = get_container_id()
+    if not container_id:
+        return f'Error: No Docker container available.'
+    docker_sandbox = get_docker_sandbox(scope.config)
+    result = docker_sandbox._execute_in_container(container_id, ['cat', file_path])
+    return result
 
 
 @tool
 def write_file(file_path: str, content: str) -> str:
-    """Writes content to a file."""
-    cwd = get_cwd()
-    target = os.path.join(cwd, file_path)
-    try:
-        os.makedirs(os.path.dirname(target) or scope.config.project_dir, exist_ok=True)
-        if os.path.islink(target):
-            os.unlink(target)
-        with open(target, 'w', encoding='utf-8') as f:
-            f.write(content)
-        return f'Successfully wrote to "{file_path}" in workspace.'
-    except Exception as e:
-        return f'Error: {e}'
+    """Writes content to a file in the Docker container."""
+    container_id = get_container_id()
+    if not container_id:
+        return f'Error: No Docker container available.'
+    docker_sandbox = get_docker_sandbox(scope.config)
+    escaped_content = content.replace("'", "'\\''")
+    dir_path = os.path.dirname(file_path)
+    if dir_path:
+        docker_sandbox._execute_in_container(container_id, ['mkdir', '-p', dir_path])
+    write_cmd = f"cat > '{file_path}' << 'GCRI_WRITE_EOF'\n{content}\nGCRI_WRITE_EOF"
+    result = docker_sandbox._execute_in_container(container_id, ['sh', '-c', write_cmd])
+    if 'Error' in result:
+        return result
+    return f'Successfully wrote to "{file_path}" in container workspace.'
 
 
 @tool
 def local_python_interpreter(code: str) -> str:
-    """Executes Python code locally."""
-    cwd = get_cwd()
-    environment = get_environment_with_python_path(cwd)
-    script_name = f'_script_{uuid.uuid4().hex[:8]}.py'
-    target = os.path.join(cwd, script_name)
-    try:
-        with open(target, 'w', encoding='utf-8') as f:
-            f.write(code)
-        result = subprocess.run(
-            [sys.executable, script_name],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=cwd,
-            env=environment
-        )
-        try:
-            os.remove(target)
-        except Exception as e:
-            logger.error(f'Unknown error is occurred during removing temporary file {target}: {e}')
-        output = result.stdout+result.stderr
-        if result.returncode != 0:
-            return f'Execution failed (Exit {result.returncode}):\n{output}'
-        return output if output.strip() else '(No output printed)'
-    except Exception as e:
-        return f'Error running python: {e}'
+    """Executes Python code in the Docker container."""
+    container_id = get_container_id()
+    if not container_id:
+        return 'Error: No Docker container available. Run within GCRI context.'
+    docker_sandbox = get_docker_sandbox(scope.config)
+    return docker_sandbox.execute_python(container_id, code)
 
 
 @tool
@@ -168,7 +121,72 @@ def search_web(query: str) -> str:
         return f'Search Error: {e}'
 
 
+class BranchContainerRegistry:
+    """Registry for branch container IDs."""
+    _containers = {}
+    _current_iteration = 0
+
+    @classmethod
+    def set_containers(cls, iteration: int, containers: dict):
+        cls._current_iteration = iteration
+        cls._containers = containers
+
+    @classmethod
+    def get_container(cls, branch_index: int) -> str:
+        return cls._containers.get((cls._current_iteration, branch_index))
+
+    @classmethod
+    def list_branches(cls) -> list:
+        return [k[1] for k in cls._containers.keys() if k[0] == cls._current_iteration]
+
+
+@tool
+def read_branch_file(branch_index: int, file_path: str) -> str:
+    """Reads a file from a specific branch's Docker container.
+
+    Args:
+        branch_index: The branch index (0-based)
+        file_path: Path to the file within the container's /workspace
+    """
+    container_id = BranchContainerRegistry.get_container(branch_index)
+    if not container_id:
+        return f'Error: Branch {branch_index} container not found.'
+    docker_sandbox = get_docker_sandbox(scope.config)
+    return docker_sandbox._execute_in_container(container_id, ['cat', file_path])
+
+
+@tool
+def list_branch_files(branch_index: int, directory: str = '.') -> str:
+    """Lists files in a directory within a specific branch's Docker container.
+
+    Args:
+        branch_index: The branch index (0-based)
+        directory: Directory path to list (default: workspace root)
+    """
+    container_id = BranchContainerRegistry.get_container(branch_index)
+    if not container_id:
+        return f'Error: Branch {branch_index} container not found.'
+    docker_sandbox = get_docker_sandbox(scope.config)
+    return docker_sandbox._execute_in_container(container_id, ['ls', '-la', directory])
+
+
+@tool
+def run_branch_command(branch_index: int, command: str) -> str:
+    """Executes a shell command in a specific branch's Docker container.
+
+    Args:
+        branch_index: The branch index (0-based)
+        command: Shell command to execute
+    """
+    container_id = BranchContainerRegistry.get_container(branch_index)
+    if not container_id:
+        return f'Error: Branch {branch_index} container not found.'
+    docker_sandbox = get_docker_sandbox(scope.config)
+    return docker_sandbox.execute_command(container_id, command)
+
+
 CLI_TOOLS = [execute_shell_command, read_file, write_file, local_python_interpreter]
+DECISION_TOOLS = [read_branch_file, list_branch_files, run_branch_command]
 
 
 class InteractiveToolGuard:
@@ -205,20 +223,7 @@ class InteractiveToolGuard:
 
     @classmethod
     def _is_inside_sandbox(cls, args):
-        current_cwd = Path(get_cwd()).resolve()
-        target_path = None
-        if 'filepath' in args:
-            target_path = Path(args['filepath'])
-        elif 'cwd' in args:
-            target_path = Path(args['cwd'])
-        if target_path:
-            try:
-                if not target_path.is_absolute():
-                    target_path = (current_cwd/target_path).resolve()
-                return current_cwd in target_path.parents or current_cwd == target_path
-            except Exception as e:
-                logger.error(f'Cannot find target path: {e}')
-                return False
+        # With Docker isolation, all operations are inside container
         return True
 
     def _analyze_python_code(self, code: str):
@@ -263,9 +268,10 @@ class InteractiveToolGuard:
 
     def invoke(self, name, args, task_id):
         with self._io_lock:
-            current_ws = GlobalVariables.CWD_VAR.get()
+            container_id = GlobalVariables.CONTAINER_VAR.get()
+            container_display = container_id[:12] if container_id else 'None'
             console.print(
-                Panel(f'Agent Request: [bold cyan]{name}[/]\nWorkspace: [dim]{current_ws}[/]', border_style='blue')
+                Panel(f'Agent Request: [bold cyan]{name}[/]\nContainer: [dim]{container_display}[/]', border_style='blue')
             )
             if 'code' in args:
                 console.print(Syntax(args['code'], 'python', theme='monokai', line_numbers=True))
@@ -274,9 +280,10 @@ class InteractiveToolGuard:
             else:
                 console.print(str(args))
             is_sensitive, reason = self._is_sensitive(name, args)
-            is_safe_sandbox_op = self._is_inside_sandbox(args)
+            # Docker provides isolation, so we can auto-execute more freely
+            is_safe_sandbox_op = True
             if is_safe_sandbox_op or (self.auto_mode and not is_sensitive):
-                console.print(f'[bold green]⚡ Auto-Executing inside Sandbox (Task {task_id})[/]')
+                console.print(f'[bold green]⚡ Auto-Executing in Docker (Task {task_id})[/]')
                 try:
                     result = self.tools[name].invoke(args)
                     console.print(f'[dim]Result: {str(result)[:100]}...[/]')
@@ -338,20 +345,20 @@ SHARED_GUARD = InteractiveToolGuard()
 
 
 class RecursiveToolAgent(Runnable):
-    def __init__(self, agent, schema: Type[BaseModel], tools: List[Any], work_dir: str = None, max_recursion_depth=50):
+    def __init__(self, agent, schema: Type[BaseModel], tools: List[Any], container_id: str = None, max_recursion_depth=50):
         self.agent = agent
         self.schema = schema
         self.tools_map = {t.name: t for t in tools}
         unique_tools = list({t.name: t for t in tools}.values())
         self.model_with_tools = self.agent.bind_tools(unique_tools+[schema])
         self.guard = SHARED_GUARD
-        self.work_dir = work_dir
+        self.container_id = container_id
         self.max_recursion_depth = max_recursion_depth
 
     def invoke(self, input: Input, config: RunnableConfig | None = None, **kwargs: Any) -> Any:
         token = None
-        if self.work_dir:
-            token = GlobalVariables.CWD_VAR.set(self.work_dir)
+        if self.container_id:
+            token = GlobalVariables.CONTAINER_VAR.set(self.container_id)
         try:
             if isinstance(input, str):
                 messages = [HumanMessage(content=input)]
@@ -398,15 +405,15 @@ class RecursiveToolAgent(Runnable):
             )
         finally:
             if token:
-                GlobalVariables.CWD_VAR.reset(token)
+                GlobalVariables.CONTAINER_VAR.reset(token)
 
 
 class CodeAgentBuilder:
-    def __init__(self, model_id, tools=None, work_dir=None, max_recursion_depth=50, **kwargs):
+    def __init__(self, model_id, tools=None, container_id=None, max_recursion_depth=50, **kwargs):
         self.model_id = model_id
         self.kwargs = kwargs
         self.tools = tools or []
-        self.work_dir = work_dir
+        self.container_id = container_id
         self.max_recursion_depth = max_recursion_depth
         self._agent = init_chat_model(self.model_id, **kwargs)
 
@@ -419,7 +426,7 @@ class CodeAgentBuilder:
             self.agent,
             schema,
             tools=self.tools,
-            work_dir=self.work_dir,
+            container_id=self.container_id,
             max_recursion_depth=self.max_recursion_depth
         )
 
@@ -427,7 +434,7 @@ class CodeAgentBuilder:
         return self.agent.invoke(*args, **kwargs)
 
 
-def build_model(model_id, gcri_options=None, work_dir=None, **parameters):
+def build_model(model_id, gcri_options=None, container_id=None, **parameters):
     if gcri_options is not None:
         use_code_tools = gcri_options.get('use_code_tools', False)
         use_web_search = gcri_options.get('use_web_search', False)
@@ -441,7 +448,25 @@ def build_model(model_id, gcri_options=None, work_dir=None, **parameters):
     return CodeAgentBuilder(
         model_id,
         tools=tools,
-        work_dir=work_dir,
+        container_id=container_id,
+        max_recursion_depth=max_recursion_depth,
+        **parameters
+    )
+
+
+def build_decision_model(model_id, gcri_options=None, **parameters):
+    """Model builder for Decision agent. Uses DECISION_TOOLS when use_code_tools=True."""
+    if gcri_options is not None:
+        use_code_tools = gcri_options.get('use_code_tools', False)
+        max_recursion_depth = gcri_options.get('max_recursion_depth', None)
+    else:
+        use_code_tools = False
+        max_recursion_depth = None
+    tools = DECISION_TOOLS if use_code_tools else []
+    return CodeAgentBuilder(
+        model_id,
+        tools=tools,
+        container_id=None,
         max_recursion_depth=max_recursion_depth,
         **parameters
     )

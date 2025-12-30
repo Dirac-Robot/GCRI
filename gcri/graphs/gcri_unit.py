@@ -16,7 +16,7 @@ from gcri.graphs.schemas import (
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
 from gcri.graphs.callbacks import AutoCallbacks
-from gcri.tools.cli import build_model
+from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry
 from gcri.tools.utils import SandboxManager
 
 
@@ -87,10 +87,9 @@ class GCRI:
         decision_schema = create_decision_schema(schema=schema)
         logger.info(f'🔧 Custom output schema applied: {decision_schema.__name__}')
 
-        decision_agent = build_model(
+        decision_agent = build_decision_model(
             decision_config.model_id,
             decision_config.get('gcri_options'),
-            work_dir=None,
             **decision_config.parameters
         ).with_structured_output(schema=decision_schema)
 
@@ -138,7 +137,7 @@ class GCRI:
         sends = []
 
         for index in range(num_branches):
-            branch_workspace = self.sandbox.setup_branch(state.count, index)
+            container_id = self.sandbox.setup_branch(state.count, index)
             sends.append(
                 Send(
                     'branch_executor',
@@ -149,7 +148,7 @@ class GCRI:
                         'strictness': state.task_strictness,
                         'strategy': state.strategies[index],
                         'feedback': state.feedback,
-                        'work_dir': branch_workspace,
+                        'container_id': container_id,
                         'intent_analysis_in_branch': state.intent_analysis
                     }
                 )
@@ -249,12 +248,12 @@ class GCRI:
             branch=state.index,
             data={'type': 'processing'}
         ).info(f'Iter #{state.count_in_branch+1} | Sampling hypothesis for strategy #{state.index+1}...')
-        work_dir = state.work_dir
+        container_id = state.container_id
         hypothesis_config = self.config.agents.branches[state.index].hypothesis
         agent = build_model(
             hypothesis_config.model_id,
             hypothesis_config.get('gcri_options'),
-            work_dir=work_dir,
+            container_id=container_id,
             **hypothesis_config.parameters
         ).with_structured_output(schema=Hypothesis)
         template = self._load_template_with_rules(
@@ -269,7 +268,7 @@ class GCRI:
             ui_event='node_update',
             node='hypothesis',
             branch=state.index,
-            data={'hypothesis': hypothesis.hypothesis, 'work_dir': work_dir}
+            data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
         ).info(f'Iter #{state.count_in_branch+1} | Sampled hypothesis #{state.index+1}: {hypothesis.hypothesis}')
         return {'hypothesis': hypothesis.hypothesis}
 
@@ -293,12 +292,12 @@ class GCRI:
             branch=state.index,
             data={'type': 'processing'}
         ).info(f'Iter #{state.count_in_branch+1} | Reasoning and refining hypothesis #{state.index+1}...')
-        work_dir = state.work_dir
+        container_id = state.container_id
         reasoning_config = self.config.agents.branches[state.index].reasoning
         agent = build_model(
             reasoning_config.model_id,
             reasoning_config.get('gcri_options'),
-            work_dir=work_dir,
+            container_id=container_id,
             **reasoning_config.parameters
         ).with_structured_output(schema=Reasoning)
         template = self._load_template_with_rules(
@@ -316,7 +315,7 @@ class GCRI:
             data={
                 'reasoning': reasoning.reasoning,
                 'hypothesis': reasoning.refined_hypothesis,
-                'work_dir': work_dir
+                'container_id': container_id
             }
         ).info(
             f'Iter #{state.count_in_branch+1} | '
@@ -361,12 +360,12 @@ class GCRI:
             branch=state.index,
             data={'type': 'processing'}
         ).info(f'Iter #{state.count_in_branch+1} | Verifying refined hypothesis #{state.index+1}...')
-        work_dir = state.work_dir
+        container_id = state.container_id
         verification_config = self.config.agents.branches[state.index].verification
         agent = build_model(
             verification_config.model_id,
             verification_config.get('gcri_options'),
-            work_dir=work_dir,
+            container_id=container_id,
             **verification_config.parameters
         ).with_structured_output(schema=Verification)
         template = self._load_template_with_rules(
@@ -395,7 +394,7 @@ class GCRI:
             data={
                 'counter_example': verification.counter_example,
                 'counter_strength': verification.counter_strength,
-                'work_dir': work_dir
+                'container_id': container_id
             }
         ).info(
             f'Iter #{state.count_in_branch+1} | '
@@ -430,6 +429,7 @@ class GCRI:
         self._check_abort()
         logger.bind(ui_event='phase_change', phase='decision').info('Starting Decision Phase...')
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
+        BranchContainerRegistry.set_containers(state.count, self.sandbox._branch_containers)
         file_contexts = self.sandbox.get_branch_context(state.count, len(state.results))
         template_path = self.config.templates.decision
         with open(template_path, 'r') as f:
@@ -476,7 +476,7 @@ class GCRI:
             intent_analysis=state.intent_analysis
         )
         template = f'{self.global_rules}\n\n{template}'
-        self.decision_agent.work_dir = self.sandbox.work_dir
+        self.decision_agent.container_id = None  # Decision agent doesn't need container
         decision = self._invoke_with_retry(self.decision_agent, template, 'Decision agent')
         logger.bind(
             ui_event='node_update',

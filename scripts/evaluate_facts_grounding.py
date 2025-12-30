@@ -20,7 +20,7 @@ from tqdm import tqdm
 
 DATASET_HF_ID = "google/FACTS-grounding-public"
 BENCHMARK_DIR = 'benchmark_results/facts_grounding'
-JUDGE_MODEL = 'gemini-3-pro'
+JUDGE_MODEL = 'gemini-2.5-pro'
 
 
 class InstructionFollowingVerdict(str, Enum):
@@ -181,8 +181,11 @@ def run_evaluation(result_file: str, output_file: str = None):
         try:
             with open(output_file, 'r', encoding='utf-8') as f:
                 existing = json.load(f)
-                judged_results = existing
-                processed_ids = {item['task_id'] for item in existing}
+                for item in existing:
+                    if item.get('eligibility_verdict') == 'Error':
+                        continue
+                    judged_results.append(item)
+                    processed_ids.add(item['task_id'])
                 logger.info(f'🔄 Resuming... {len(judged_results)} already judged.')
         except json.JSONDecodeError:
             pass
