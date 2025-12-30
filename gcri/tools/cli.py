@@ -189,21 +189,72 @@ CLI_TOOLS = [execute_shell_command, read_file, write_file, local_python_interpre
 DECISION_TOOLS = [read_branch_file, list_branch_files, run_branch_command]
 
 
+class SecurityPolicy:
+    """Pure security policy checker without UI dependencies."""
+
+    def __init__(self, black_and_white_lists: dict):
+        self._lists = black_and_white_lists
+
+    def analyze_python_code(self, code: str) -> tuple[bool, str | None]:
+        """Check Python code for sensitive operations."""
+        try:
+            tree = ast.parse(code)
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    names = []
+                    if isinstance(node, ast.Import):
+                        names = [n.name.split('.')[0] for n in node.names]
+                    elif isinstance(node, ast.ImportFrom) and node.module:
+                        names = [node.module.split('.')[0]]
+                    for name in names:
+                        if name in self._lists.get('sensitive_modules', set()):
+                            return True, f'Importing sensitive module "{name}"'
+                if isinstance(node, ast.Call):
+                    if isinstance(node.func, ast.Name) and node.func.id == 'open':
+                        return True, 'Using file "open()" function'
+        except SyntaxError:
+            return True, 'Syntax Error'
+        except Exception as e:
+            return True, f'Complex code detected: {e}'
+        return False, None
+
+    def is_sensitive(self, tool_name: str, args: dict) -> tuple[bool, str | None]:
+        """Check if a tool invocation is sensitive."""
+        if tool_name == 'execute_shell_command':
+            command = args.get('command', '').strip()
+            for sensitive_command in self._lists.get('sensitive_commands', []):
+                if sensitive_command in command.split():
+                    return True, f'Command "{sensitive_command}" detected'
+        if tool_name == 'write_file':
+            path_in_args = args.get('filepath', '')
+            path = Path(path_in_args)
+            for sensitive_path in self._lists.get('sensitive_paths', []):
+                if sensitive_path in path_in_args:
+                    return True, f'Sensitive path "{sensitive_path}" detected'
+            if path.suffix not in self._lists.get('safe_extensions', set()):
+                return True, f'Unusual extension "{path.suffix}"'
+        if tool_name == 'local_python_interpreter':
+            return self.analyze_python_code(args.get('code', ''))
+        return False, None
+
+
 class InteractiveToolGuard:
+    """CLI-specific tool execution guard with user interaction."""
     _io_lock = threading.Lock()
 
     def __init__(self):
         self.tools = {t.name: t for t in CLI_TOOLS}
         try:
-            self._black_and_white_lists = _get_black_and_white_lists()
+            black_and_white_lists = _get_black_and_white_lists()
         except Exception as e:
             logger.error(f'Cannot load black and white lists: {e}')
-            self._black_and_white_lists = {
+            black_and_white_lists = {
                 'sensitive_commands': [],
                 'sensitive_paths': [],
                 'sensitive_modules': set(),
                 'safe_extensions': set()
             }
+        self._policy = SecurityPolicy(black_and_white_lists)
 
     @property
     def auto_mode(self):
@@ -221,50 +272,6 @@ class InteractiveToolGuard:
                 except OSError:
                     pass
 
-    @classmethod
-    def _is_inside_sandbox(cls, args):
-        # With Docker isolation, all operations are inside container
-        return True
-
-    def _analyze_python_code(self, code: str):
-        try:
-            tree = ast.parse(code)
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.Import, ast.ImportFrom)):
-                    names = []
-                    if isinstance(node, ast.Import):
-                        names = [n.name.split('.')[0] for n in node.names]
-                    elif isinstance(node, ast.ImportFrom) and node.module:
-                        names = [node.module.split('.')[0]]
-                    for name in names:
-                        if name in self._black_and_white_lists['sensitive_modules']:
-                            return True, f'Importing sensitive module "{name}"'
-                if isinstance(node, ast.Call):
-                    if isinstance(node.func, ast.Name) and node.func.id == 'open':
-                        return True, 'Using file "open()" function'
-        except SyntaxError:
-            return True, 'Syntax Error'
-        except Exception as e:
-            return True, f'Complex code detected: {e}'
-        return False, None
-
-    def _is_sensitive(self, name, args):
-        if name == 'execute_shell_command':
-            command = args.get('command', '').strip()
-            for sensitive_command in self._black_and_white_lists.get('sensitive_commands', []):
-                if sensitive_command in command.split():
-                    return True, f'Command "{sensitive_command}" detected'
-        if name == 'write_file':
-            path_in_args = args.get('filepath', '')
-            path = Path(path_in_args)
-            for sensitive_path in self._black_and_white_lists.get('sensitive_paths', []):
-                if sensitive_path in path_in_args:
-                    return True, f'Sensitive path "{sensitive_path}" detected'
-            if path.suffix not in self._black_and_white_lists['safe_extensions']:
-                return True, f'Unusual extension "{path.suffix}"'
-        if name == 'local_python_interpreter':
-            return self._analyze_python_code(args.get('code', ''))
-        return False, None
 
     def invoke(self, name, args, task_id):
         with self._io_lock:
@@ -279,7 +286,7 @@ class InteractiveToolGuard:
                 console.print(Syntax(args['command'], 'bash', theme='monokai'))
             else:
                 console.print(str(args))
-            is_sensitive, reason = self._is_sensitive(name, args)
+            is_sensitive, reason = self._policy.is_sensitive(name, args)
             # Docker provides isolation, so we can auto-execute more freely
             is_safe_sandbox_op = True
             if is_safe_sandbox_op or (self.auto_mode and not is_sensitive):

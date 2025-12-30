@@ -556,88 +556,76 @@ class GCRI:
             'feedback': integrated_feedback
         }
 
-    def __call__(self, task, initial_memory=None, commit_mode='manual'):
-        """
-        Execute the GCRI reasoning loop for a given task.
-
-        Orchestrates the complete reasoning pipeline:
-        1. Generate strategies
-        2. Execute parallel branches (hypothesis → reasoning → verification)
-        3. Make collective decisions
-        4. Update memory and iterate if needed
-        5. Optionally commit winning branch to project
-
-        Args:
-            task: Task description string or dict with state to resume.
-            initial_memory: Optional StructuredMemory to start with.
-            commit_mode: 'manual', 'auto-accept', 'auto-reject'
-
-        Returns:
-            dict: Final state including 'final_output', 'best_branch_index',
-                  'memory', 'count', and task metadata.
-
-        Raises:
-            TaskAbortedError: If abort_event is set during execution.
-        """
-        self.sandbox.setup()
-        feedback = ''
+    def _restore_from_state(self, task_dict, initial_memory):
+        """Restore execution state from a previous run."""
         memory = initial_memory if initial_memory is not None else StructuredMemory()
+        logger.info('🔄 State object detected. Resuming from previous state in memory...')
+        try:
+            task_content = task_dict.get('task', '')
+            if 'memory' in task_dict:
+                memory = TypeAdapter(StructuredMemory).validate_python(task_dict['memory'])
+            feedback = task_dict.get('feedback', '')
+            start_index = task_dict.get('count', -1)+1
+            logger.info(f'Task: {task_content[:50]}...')
+            logger.info(f'Resuming loop from index: {start_index}')
+            return memory, feedback, start_index
+        except Exception as e:
+            logger.error(f'Failed to restore state from object: {e}')
+            raise ValueError('Invalid state object provided.')
+
+    def _handle_iteration_success(self, result, index, commit_mode):
+        """Handle successful decision and optional commit."""
+        logger.info('Final result is successfully deduced.')
+        logger.info(f'Task Completed. Check sandbox: {self.sandbox.work_dir}')
+        best_branch_index = result.get('best_branch_index', -1)
+        if best_branch_index < 0:
+            logger.warning('Decision is True but no branch index provided. Cannot commit automatically.')
+            return True
+        winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
+        logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
+        logger.info(f'📂 Location: {winning_branch_path}')
+        commit_context = {
+            'winning_branch_path': winning_branch_path,
+            'best_branch_index': best_branch_index,
+            'final_output': result.get('final_output')
+        }
+        should_commit = (
+            commit_mode == 'auto-accept' or
+            (commit_mode == 'manual' and self.callbacks.on_commit_request(commit_context))
+        )
+        if should_commit:
+            self.sandbox.commit_winning_branch(winning_branch_path)
+        else:
+            logger.info('Changes discarded.')
+        return True
+
+    def __call__(self, task, initial_memory=None, commit_mode='manual'):
+        """Execute the GCRI reasoning loop for a given task."""
+        self.sandbox.setup()
         result = None
         if isinstance(task, dict):
-            logger.info('🔄 State object detected. Resuming from previous state in memory...')
-            try:
-                task_content = task.get('task', '')
-                if 'memory' in task:
-                    memory = TypeAdapter(StructuredMemory).validate_python(task['memory'])
-                feedback = task.get('feedback', '')
-                start_index = task.get('count', -1)+1
-                logger.info(f'Task: {task_content[:50]}...')
-                logger.info(f'Resuming loop from index: {start_index}')
-            except Exception as e:
-                logger.error(f'Failed to restore state from object: {e}')
-                raise ValueError('Invalid state object provided.')
+            memory, feedback, start_index = self._restore_from_state(task, initial_memory)
         else:
+            memory = initial_memory if initial_memory is not None else StructuredMemory()
+            feedback = ''
             start_index = 0
         try:
             for index in range(start_index, self.config.protocols.max_iterations):
-                logger.bind(
-                    ui_event='phase_change',
-                    phase='strategy',
-                    iteration=index
-                ).info(f'Starting Iteration {index+1}...')
+                logger.bind(ui_event='phase_change', phase='strategy', iteration=index).info(
+                    f'Starting Iteration {index+1}...'
+                )
                 try:
-                    result = self.workflow.invoke(
-                        {
-                            'count': index,
-                            'task': task,
-                            'feedback': feedback,
-                            'memory': memory
-                        }
-                    )
+                    result = self.workflow.invoke({
+                        'count': index,
+                        'task': task,
+                        'feedback': feedback,
+                        'memory': memory
+                    })
                     result = TypeAdapter(TaskState).validate_python(result).model_dump(mode='json')
                     self.sandbox.save_iteration_log(index, result)
                     if result['decision']:
-                        logger.info('Final result is successfully deduced.')
-                        logger.info(f'Task Completed. Check sandbox: {self.sandbox.work_dir}')
-                        best_branch_index = result.get('best_branch_index', -1)
-                        if best_branch_index >= 0:
-                            winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
-                            logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
-                            logger.info(f'📂 Location: {winning_branch_path}')
-                            commit_context = {
-                                'winning_branch_path': winning_branch_path,
-                                'best_branch_index': best_branch_index,
-                                'final_output': result.get('final_output')
-                            }
-                            if commit_mode == 'auto-accept' or (commit_mode == 'manual' and self.callbacks.on_commit_request(commit_context)):
-                                self.sandbox.commit_winning_branch(winning_branch_path)
-                            else:
-                                logger.info('Changes discarded.')
-                            break
-                        else:
-                            logger.warning(
-                                'Decision is True but no branch index provided. Cannot commit automatically.'
-                            )
+                        self._handle_iteration_success(result, index, commit_mode)
+                        break
                     else:
                         memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])
                         feedback = result['feedback']
