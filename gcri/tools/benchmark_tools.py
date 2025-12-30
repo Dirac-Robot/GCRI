@@ -131,9 +131,25 @@ if INSPECT_AVAILABLE:
         commit_mode: str
     ) -> TaskState:
         """Execute GCRI with InspectAI sandbox (patches DockerSandbox at runtime)."""
+        import asyncio
+        import shutil
         import gcri.tools.docker_sandbox as docker_sandbox_module
         original_get_docker_sandbox = docker_sandbox_module.get_docker_sandbox
         adapter = InspectSandboxAdapter()
+
+        def async_to_sync(awaitable):
+            """Safely execute async code from sync context."""
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, awaitable)
+                    return future.result()
+            return asyncio.run(awaitable)
 
         class InspectSandboxBridge:
             """Drop-in replacement for DockerSandbox that delegates to InspectAI."""
@@ -150,31 +166,44 @@ if INSPECT_AVAILABLE:
             def setup_branch(self, iteration: int, branch: int, source_dir: str) -> str:
                 container_id = f'inspect_branch_{iteration}_{branch}'
                 self._containers[f'{iteration}_{branch}'] = container_id
+                
+                # Copy source files to sandbox
+                self._copy_to_sandbox(source_dir)
                 return container_id
 
+            def _copy_to_sandbox(self, source_dir: str):
+                """Recursively copy files to sandbox."""
+                ignore = {'.git', '__pycache__', 'venv', 'env', 'node_modules', '.idea', '.vscode', '.gcri'}
+                for root, dirs, files in os.walk(source_dir):
+                    dirs[:] = [d for d in dirs if d not in ignore]
+                    rel_path = os.path.relpath(root, source_dir)
+                    if rel_path == '.':
+                        rel_path = ''
+                    
+                    # Create directory
+                    if rel_path:
+                        async_to_sync(self._adapter.execute_command(f'mkdir -p {rel_path}'))
+
+                    for file in files:
+                        if file in ignore:
+                            continue
+                        file_path = os.path.join(root, file)
+                        dest_path = os.path.join(rel_path, file)
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            async_to_sync(self._adapter.write_file(dest_path, content))
+                        except UnicodeDecodeError:
+                            pass  # Skip binary files
+
             def execute_command(self, container_id: str, command: str) -> str:
-                import asyncio
-                import concurrent.futures
-                try:
-                    asyncio.get_running_loop()
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        future = pool.submit(asyncio.run, self._adapter.execute_command(command))
-                        return future.result()
-                except RuntimeError:
-                    return asyncio.run(self._adapter.execute_command(command))
+                return async_to_sync(self._adapter.execute_command(command))
 
             def execute_python(self, container_id: str, code: str) -> str:
-                import asyncio
-                import concurrent.futures
-                try:
-                    asyncio.get_running_loop()
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        future = pool.submit(asyncio.run, self._adapter.execute_python(code))
-                        return future.result()
-                except RuntimeError:
-                    return asyncio.run(self._adapter.execute_python(code))
+                return async_to_sync(self._adapter.execute_python(code))
 
             def commit_to_host(self, container_id: str, target_dir: str):
+                """Read files from sandbox and write to host (Minimal implementation)."""
                 pass
 
             def cleanup_container(self, container_id: str):
