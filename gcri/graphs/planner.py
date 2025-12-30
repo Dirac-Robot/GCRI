@@ -1,6 +1,6 @@
+import asyncio
 import json
 import os
-import asyncio
 from copy import deepcopy as dcp
 from datetime import datetime
 from typing import Literal
@@ -12,7 +12,7 @@ from pydantic import TypeAdapter
 
 from gcri.dashboard.backend.manager import manager
 from gcri.graphs.gcri_unit import GCRI, TaskAbortedError
-from gcri.graphs.schemas import PlanProtoType, Compression, create_planner_schema
+from gcri.graphs.schemas import Compression, create_planner_schema
 from gcri.graphs.states import StructuredMemory, GlobalState
 
 
