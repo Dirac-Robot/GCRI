@@ -7,7 +7,16 @@ RUN pip install --no-cache-dir \
     scipy \
     sympy \
     requests \
-    beautifulsoup4
+    beautifulsoup4 \
+    # For GAIA/benchmark tasks
+    datasets \
+    huggingface_hub \
+    pillow \
+    PyPDF2 \
+    python-docx \
+    openpyxl \
+    lxml \
+    httpx
 
 # Set working directory
 WORKDIR /workspace

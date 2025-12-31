@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import uuid
+
 from loguru import logger
 
 
@@ -75,6 +76,7 @@ class DockerSandbox:
             subprocess.run(['docker', 'start', container_id], capture_output=True, timeout=10)
 
             self._copy_to_container(source_dir, container_id)
+            self._sync_python_environment(source_dir, container_id)
 
             self._containers[branch_id] = container_id
             logger.debug(f'🐳 Docker container created: {container_id[:12]} for branch {branch_id}')
@@ -109,6 +111,39 @@ class DockerSandbox:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
 
+    def _sync_python_environment(self, source_dir: str, container_id: str):
+        """Install Python dependencies in container if requirements file exists."""
+        requirements_path = os.path.join(source_dir, 'requirements.txt')
+        pyproject_path = os.path.join(source_dir, 'pyproject.toml')
+        setup_path = os.path.join(source_dir, 'setup.py')
+
+        if os.path.exists(requirements_path):
+            logger.info('📦 Installing requirements.txt in container...')
+            result = self._execute_in_container(
+                container_id,
+                ['pip', 'install', '-q', '-r', '/workspace/requirements.txt']
+            )
+            if 'Error' not in result:
+                logger.debug('✅ Requirements installed successfully')
+            else:
+                logger.warning(f'⚠️ Some packages may have failed: {result[:200]}')
+        elif os.path.exists(pyproject_path):
+            logger.info('📦 Installing from pyproject.toml in container...')
+            result = self._execute_in_container(
+                container_id,
+                ['pip', 'install', '-q', '-e', '/workspace']
+            )
+            if 'Error' not in result:
+                logger.debug('✅ Project installed successfully')
+            else:
+                logger.warning(f'⚠️ Some packages may have failed: {result[:200]}')
+        elif os.path.exists(setup_path):
+            logger.info('📦 Installing from setup.py in container...')
+            self._execute_in_container(
+                container_id,
+                ['pip', 'install', '-q', '-e', '/workspace']
+            )
+
     def execute_command(self, container_id: str, command: str) -> str:
         """Execute shell command in container."""
         return self._execute_in_container(container_id, ['sh', '-c', command])
@@ -124,7 +159,7 @@ class DockerSandbox:
 
     def _execute_in_container(self, container_id: str, command: list) -> str:
         """Execute command via docker exec."""
-        exec_cmd = ['docker', 'exec', container_id] + command
+        exec_cmd = ['docker', 'exec', container_id]+command
 
         try:
             result = subprocess.run(

@@ -564,3 +564,11 @@ def local_llama(config):
                 use_web_search=True
             )
         )
+
+
+@scope.observe()
+def set_benchmark_gaia(config):
+    config.limit = 0
+    config.use_inspect_sandbox = True
+    config.subset = '2023_all'
+    config.split = 'validation'
