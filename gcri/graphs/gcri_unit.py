@@ -16,7 +16,7 @@ from gcri.graphs.schemas import (
 )
 from gcri.graphs.states import TaskState, BranchState, HypothesisResult, IterationLog, StructuredMemory
 from gcri.graphs.callbacks import AutoCallbacks
-from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry
+from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry, set_global_variables
 from gcri.tools.utils import SandboxManager
 
 
@@ -53,6 +53,7 @@ class GCRI:
             callbacks: Optional GCRICallbacks instance. Defaults to AutoCallbacks.
         """
         self.config = config
+        set_global_variables()
         self.schema = schema
         self.sandbox = SandboxManager(config)
         self.abort_event = abort_event

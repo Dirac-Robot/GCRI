@@ -20,7 +20,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 
 from gcri.config import scope
-from gcri.tools.docker_sandbox import get_docker_sandbox
+from gcri.tools.docker_sandbox import get_sandbox
 
 console = Console(force_terminal=True)
 
@@ -28,15 +28,17 @@ console = Console(force_terminal=True)
 class GlobalVariables:
     CONTAINER_VAR = None
     AUTO_MODE_FILE = None
+    CONFIG = None
 
 
 @scope
 def set_global_variables(config):
     GlobalVariables.CONTAINER_VAR = ContextVar('container_id', default=None)
     GlobalVariables.AUTO_MODE_FILE = os.path.join(config.project_dir, '.gcri_auto_mode')
+    GlobalVariables.CONFIG = config
 
 
-set_global_variables()
+
 
 
 def get_input(message):
@@ -58,51 +60,50 @@ def _get_black_and_white_lists(config):
 
 @tool
 def execute_shell_command(command: str) -> str:
-    """Executes a shell command in the Docker container."""
+    """Executes a shell command in the sandbox."""
     container_id = get_container_id()
     if not container_id:
-        return 'Error: No Docker container available. Run within GCRI context.'
-    docker_sandbox = get_docker_sandbox(scope.config)
-    return docker_sandbox.execute_command(container_id, command)
+        return 'Error: No sandbox container available. Run within GCRI context.'
+    sandbox = get_sandbox(scope.config)
+    return sandbox.execute_command(container_id, command)
 
 
 @tool
 def read_file(file_path: str) -> str:
-    """Reads the content of a file from the Docker container."""
+    """Reads the content of a file from the sandbox."""
     container_id = get_container_id()
     if not container_id:
-        return f'Error: No Docker container available.'
-    docker_sandbox = get_docker_sandbox(scope.config)
-    result = docker_sandbox._execute_in_container(container_id, ['cat', file_path])
+        return f'Error: No sandbox container available.'
+    sandbox = get_sandbox(scope.config)
+    result = sandbox._execute_in_container(container_id, ['cat', file_path])
     return result
 
 
 @tool
 def write_file(file_path: str, content: str) -> str:
-    """Writes content to a file in the Docker container."""
+    """Writes content to a file in the sandbox."""
     container_id = get_container_id()
     if not container_id:
-        return f'Error: No Docker container available.'
-    docker_sandbox = get_docker_sandbox(scope.config)
-    escaped_content = content.replace("'", "'\\''")
+        return f'Error: No sandbox container available.'
+    sandbox = get_sandbox(scope.config)
     dir_path = os.path.dirname(file_path)
     if dir_path:
-        docker_sandbox._execute_in_container(container_id, ['mkdir', '-p', dir_path])
+        sandbox._execute_in_container(container_id, ['mkdir', '-p', dir_path])
     write_cmd = f"cat > '{file_path}' << 'GCRI_WRITE_EOF'\n{content}\nGCRI_WRITE_EOF"
-    result = docker_sandbox._execute_in_container(container_id, ['sh', '-c', write_cmd])
+    result = sandbox._execute_in_container(container_id, ['sh', '-c', write_cmd])
     if 'Error' in result:
         return result
-    return f'Successfully wrote to "{file_path}" in container workspace.'
+    return f'Successfully wrote to "{file_path}" in workspace.'
 
 
 @tool
 def local_python_interpreter(code: str) -> str:
-    """Executes Python code in the Docker container."""
+    """Executes Python code in the sandbox."""
     container_id = get_container_id()
     if not container_id:
-        return 'Error: No Docker container available. Run within GCRI context.'
-    docker_sandbox = get_docker_sandbox(scope.config)
-    return docker_sandbox.execute_python(container_id, code)
+        return 'Error: No sandbox container available. Run within GCRI context.'
+    sandbox = get_sandbox(scope.config)
+    return sandbox.execute_python(container_id, code)
 
 
 @tool
@@ -110,12 +111,12 @@ def search_web(query: str) -> str:
     """Searches the web using DuckDuckGo."""
     try:
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=10))
+            results = list(ddgs.text(query, max_results=5))
             if not results:
                 return 'No results found.'
             formatted = []
-            for r in results:
-                formatted.append(f'Title: {r["title"]}\nLink: {r["href"]}\nSnippet: {r["body"]}')
+            for result in results:
+                formatted.append(f'Title: {result["title"]}\nLink: {result["href"]}\nSnippet: {result["body"]}')
             return '\n---\n'.join(formatted)
     except Exception as e:
         return f'Search Error: {e}'
@@ -142,22 +143,24 @@ class BranchContainerRegistry:
 
 @tool
 def read_branch_file(branch_index: int, file_path: str) -> str:
-    """Reads a file from a specific branch's Docker container.
+    """
+    Reads a file from a specific branch's sandbox.
 
     Args:
         branch_index: The branch index (0-based)
-        file_path: Path to the file within the container's /workspace
+        file_path: Path to the file within the sandbox's /workspace
     """
     container_id = BranchContainerRegistry.get_container(branch_index)
     if not container_id:
         return f'Error: Branch {branch_index} container not found.'
-    docker_sandbox = get_docker_sandbox(scope.config)
-    return docker_sandbox._execute_in_container(container_id, ['cat', file_path])
+    sandbox = get_sandbox(scope.config)
+    return sandbox._execute_in_container(container_id, ['cat', file_path])
 
 
 @tool
 def list_branch_files(branch_index: int, directory: str = '.') -> str:
-    """Lists files in a directory within a specific branch's Docker container.
+    """
+    Lists files in a directory within a specific branch's sandbox.
 
     Args:
         branch_index: The branch index (0-based)
@@ -166,13 +169,14 @@ def list_branch_files(branch_index: int, directory: str = '.') -> str:
     container_id = BranchContainerRegistry.get_container(branch_index)
     if not container_id:
         return f'Error: Branch {branch_index} container not found.'
-    docker_sandbox = get_docker_sandbox(scope.config)
-    return docker_sandbox._execute_in_container(container_id, ['ls', '-la', directory])
+    sandbox = get_sandbox(scope.config)
+    return sandbox._execute_in_container(container_id, ['ls', '-la', directory])
 
 
 @tool
 def run_branch_command(branch_index: int, command: str) -> str:
-    """Executes a shell command in a specific branch's Docker container.
+    """
+    Executes a shell command in a specific branch's sandbox.
 
     Args:
         branch_index: The branch index (0-based)
@@ -181,8 +185,8 @@ def run_branch_command(branch_index: int, command: str) -> str:
     container_id = BranchContainerRegistry.get_container(branch_index)
     if not container_id:
         return f'Error: Branch {branch_index} container not found.'
-    docker_sandbox = get_docker_sandbox(scope.config)
-    return docker_sandbox.execute_command(container_id, command)
+    sandbox = get_sandbox(scope.config)
+    return sandbox.execute_command(container_id, command)
 
 
 CLI_TOOLS = [execute_shell_command, read_file, write_file, local_python_interpreter]
@@ -348,7 +352,14 @@ class InteractiveToolGuard:
                         return f'Tool Error: {e}'
 
 
-SHARED_GUARD = InteractiveToolGuard()
+SHARED_GUARD = None
+
+
+def get_shared_guard():
+    global SHARED_GUARD
+    if SHARED_GUARD is None:
+        SHARED_GUARD = InteractiveToolGuard()
+    return SHARED_GUARD
 
 
 class RecursiveToolAgent(Runnable):
@@ -358,7 +369,7 @@ class RecursiveToolAgent(Runnable):
         self.tools_map = {t.name: t for t in tools}
         unique_tools = list({t.name: t for t in tools}.values())
         self.model_with_tools = self.agent.bind_tools(unique_tools+[schema])
-        self.guard = SHARED_GUARD
+        self.guard = get_shared_guard()
         self.container_id = container_id
         self.max_recursion_depth = max_recursion_depth
 
@@ -374,15 +385,44 @@ class RecursiveToolAgent(Runnable):
             else:
                 messages = list(input)
             recursion_count = 0
+            parse_retry_count = 0
+            max_parse_retries = 3
             while True:
                 result = self.model_with_tools.invoke(messages, config=config)
                 messages.append(result)
                 if not result.tool_calls:
+                    # Handle empty response (content can be str or list)
+                    content = result.content
+                    is_empty = False
+                    if content is None:
+                        is_empty = True
+                    elif isinstance(content, str):
+                        is_empty = not content.strip()
+                    elif isinstance(content, list):
+                        is_empty = len(content) == 0 or all(
+                            (isinstance(c, str) and not c.strip()) or
+                            (isinstance(c, dict) and not c.get('text', '').strip())
+                            for c in content
+                        )
+                    if is_empty:
+                        logger.warning(f'Empty response from model (content type: {type(content).__name__}). Retrying...')
+                        messages.append(HumanMessage(content='Your response was empty. Please provide the final answer or call a tool.'))
+                        recursion_count += 1
+                        if recursion_count >= self.max_recursion_depth:
+                            logger.error('Max recursion depth reached with empty responses.')
+                            return None
+                        continue
+                    # Try structured output parsing with retry on failure
                     try:
                         return self.agent.with_structured_output(self.schema).invoke(messages)
                     except Exception as e:
-                        logger.error(f'Unknown error is occurred during invoking: {e}')
-                        return None
+                        parse_retry_count += 1
+                        if parse_retry_count >= max_parse_retries:
+                            logger.error(f'Structured output parsing failed after {max_parse_retries} retries: {e}')
+                            return None
+                        logger.warning(f'JSON parsing error (attempt {parse_retry_count}/{max_parse_retries}): {e}')
+                        messages.append(HumanMessage(content='Your response had invalid JSON format. Please provide a valid JSON response matching the required schema.'))
+                        continue
                 outputs = []
                 for call in result.tool_calls:
                     name, args, call_id = call['name'], call['args'], call['id']

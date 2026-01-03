@@ -69,6 +69,7 @@ dependencies = [
     "inspect-ai>=0.3.38",
     "fastapi",
     "uvicorn",
+    "inspect-evals>=0.3.104",
 ]
 
 [project.optional-dependencies]
@@ -101,3 +102,8 @@ gcri = "gcri.entry:main_entry"
 
 [tool.setuptools.package-data]
 "gcri" = ["templates/**/*", "dashboard/frontend/dist/**/*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

@@ -211,11 +211,19 @@ class DockerSandbox:
         return self._containers.get(branch_id)
 
 
-_docker_sandbox_instance = None
+_sandbox_instance = None
+
+
+def get_sandbox(config):
+    """Get Docker sandbox instance."""
+    global _sandbox_instance
+    if _sandbox_instance is None:
+        _sandbox_instance = DockerSandbox(config)
+        logger.info('🐳 Using Docker sandbox mode')
+    return _sandbox_instance
 
 
 def get_docker_sandbox(config):
-    global _docker_sandbox_instance
-    if _docker_sandbox_instance is None:
-        _docker_sandbox_instance = DockerSandbox(config)
-    return _docker_sandbox_instance
+    """Deprecated: Use get_sandbox() instead."""
+    return get_sandbox(config)
+

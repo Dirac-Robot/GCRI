@@ -1,7 +1,7 @@
 import operator
 from typing import List, Annotated, Optional, Literal, Dict, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from gcri.graphs.schemas import BranchAnalysis, RefutationStatus, Strategy
 

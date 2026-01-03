@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from loguru import logger
 
-from gcri.tools.docker_sandbox import get_docker_sandbox
+from gcri.tools.docker_sandbox import get_sandbox
 
 
 class SandboxManager:
@@ -43,7 +43,7 @@ class SandboxManager:
     @property
     def docker_sandbox(self):
         if self._docker_sandbox is None:
-            self._docker_sandbox = get_docker_sandbox(self.config)
+            self._docker_sandbox = get_sandbox(self.config)
         return self._docker_sandbox
 
     def setup(self):
@@ -51,7 +51,7 @@ class SandboxManager:
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         self._work_dir = os.path.join(self.run_dir, f'run-{timestamp}')
         self._log_dir = os.path.join(self.work_dir, 'logs')
-        logger.info(f'📦 Creating Docker sandbox run at: {self.work_dir}')
+        logger.info(f'📦 Creating sandbox run at: {self.work_dir}')
         os.makedirs(self.work_dir, exist_ok=True)
         os.makedirs(self.log_dir, exist_ok=True)
 

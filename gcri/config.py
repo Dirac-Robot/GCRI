@@ -252,149 +252,104 @@ def gpt_4_1_based(config):
 @scope.observe()
 def gemini_based(config):
     config.update(
-        {
-            'preset_name': 'gemini_balanced',
-            'agents': {
-                'planner': {
-                    'model_id': 'gemini-3-flash-preview',
-                    'parameters': {
-                        'model_provider': 'google_genai',
-                        'max_tokens': 51200,
-                        'thinking_level': 'medium',
-                        'temperature': 0.1
-                    }
-                },
-                'compression': {
-                    'model_id': 'gemini-2.5-flash-lite',
-                    'parameters': {
-                        'model_provider': 'google_genai',
-                        'max_tokens': 51200,
-                        'temperature': 0
-                    }
-                },
-                'strategy_generator': {
-                    'model_id': 'gemini-3-flash-preview',
-                    'parameters': {
-                        'model_provider': 'google_genai',
-                        'max_tokens': 51200,
-                        'thinking_level': 'medium',
-                        'temperature': 0.7
-                    }
-                },
-                'branches': [
-                    {
-                        'hypothesis': {
-                            'model_id': 'gemini-3-flash-preview',
-                            'parameters': {
-                                'model_provider': 'google_genai',
-                                'max_tokens': 51200,
-                                'thinking_level': 'medium',
-                                'temperature': 0.2
-                            },
-                            'gcri_options': {
-                                'use_code_tools': True,
-                                'use_web_search': True,
-                                'max_recursion_depth': None
-                            }
-                        },
-                        'reasoning': {
-                            'model_id': 'gemini-3-flash-preview',
-                            'parameters': {
-                                'model_provider': 'google_genai',
-                                'max_tokens': 51200,
-                                'thinking_level': 'medium',
-                                'temperature': 0.2
-                            },
-                            'gcri_options': {
-                                'use_code_tools': True,
-                                'use_web_search': True,
-                                'max_recursion_depth': None
-                            }
-                        },
-                        'verification': {
-                            'model_id': 'gemini-3-flash-preview',
-                            'parameters': {
-                                'model_provider': 'google_genai',
-                                'max_tokens': 51200,
-                                'thinking_level': 'medium',
-                                'temperature': 0
-                            },
-                            'gcri_options': {
-                                'use_code_tools': True,
-                                'use_web_search': True,
-                                'max_recursion_depth': None
-                            }
-                        }
-                    },
-                    {
-                        'hypothesis': {
-                            'model_id': 'gemini-3-flash-preview',
-                            'parameters': {
-                                'model_provider': 'google_genai',
-                                'max_tokens': 51200,
-                                'thinking_level': 'medium',
-                                'temperature': 0.3
-                            },
-                            'gcri_options': {
-                                'use_code_tools': True,
-                                'use_web_search': True,
-                                'max_recursion_depth': None
-                            }
-                        },
-                        'reasoning': {
-                            'model_id': 'gemini-3-flash-preview',
-                            'parameters': {
-                                'model_provider': 'google_genai',
-                                'max_tokens': 51200,
-                                'thinking_level': 'medium',
-                                'temperature': 0.2
-                            },
-                            'gcri_options': {
-                                'use_code_tools': True,
-                                'use_web_search': True,
-                                'max_recursion_depth': None
-                            }
-                        },
-                        'verification': {
-                            'model_id': 'gemini-3-flash-preview',
-                            'parameters': {
-                                'model_provider': 'google_genai',
-                                'max_tokens': 51200,
-                                'thinking_level': 'medium',
-                                'temperature': 0
-                            },
-                            'gcri_options': {
-                                'use_code_tools': True,
-                                'use_web_search': True,
-                                'max_recursion_depth': None
-                            }
-                        }
-                    }
+        dict(
+            agents=dict(
+                planner=dict(
+                    model_id='gemini-3-flash-preview',
+                    parameters=dict(
+                        model_provider='google_genai',
+                        max_tokens=51200,
+                        thinking_level='medium',
+                        temperature=0.1
+                    )
+                ),
+                compression=dict(
+                    model_id='gemini-2.5-flash-lite',
+                    parameters=dict(
+                        model_provider='google_genai',
+                        max_tokens=51200,
+                        temperature=0
+                    )
+                ),
+                strategy_generator=dict(
+                    model_id='gemini-3-flash-preview',
+                    parameters=dict(
+                        model_provider='google_genai',
+                        max_tokens=51200,
+                        thinking_level='medium',
+                        temperature=0.7
+                    )
+                ),
+                branches=[
+                    dict(
+                        hypothesis=dict(
+                            model_id='gemini-3-flash-preview',
+                            parameters=dict(
+                                model_provider='google_genai',
+                                max_tokens=51200,
+                                thinking_level='medium',
+                                temperature=0.2
+                            ),
+                            gcri_options=dict(
+                                use_code_tools=True,
+                                use_web_search=True,
+                                max_recursion_depth=None
+                            )
+                        ),
+                        reasoning=dict(
+                            model_id='gemini-3-flash-preview',
+                            parameters=dict(
+                                model_provider='google_genai',
+                                max_tokens=51200,
+                                thinking_level='medium',
+                                temperature=0.2
+                            ),
+                            gcri_options=dict(
+                                use_code_tools=True,
+                                use_web_search=True,
+                                max_recursion_depth=None
+                            )
+                        ),
+                        verification=dict(
+                            model_id='gemini-3-flash-preview',
+                            parameters=dict(
+                                model_provider='google_genai',
+                                max_tokens=51200,
+                                thinking_level='medium',
+                                temperature=0
+                            ),
+                            gcri_options=dict(
+                                use_code_tools=True,
+                                use_web_search=True,
+                                max_recursion_depth=None
+                            )
+                        )
+                    ) for _ in range(3)
                 ],
-                'decision': {
-                    'model_id': 'gemini-3-flash-preview',
-                    'parameters': {
-                        'model_provider': 'google_genai',
-                        'max_tokens': 51200,
-                        'thinking_level': 'medium',
-                        'temperature': 0
-                    },
-                    'gcri_options': {
-                        'use_code_tools': True,
-                        'use_web_search': True,
-                        'max_recursion_depth': None
-                    }
-                },
-                'memory': {
-                    'model_id': 'gemini-2.5-flash-lite',
-                    'parameters': {
-                        'model_provider': 'google_genai',
-                        'max_tokens': 51200,
-                        'temperature': 0
-                    }
-                }
-            }
-        }
+                decision=dict(
+                    model_id='gemini-3-flash-preview',
+                    parameters=dict(
+                        model_provider='google_genai',
+                        max_tokens=51200,
+                        thinking_level='medium',
+                        temperature=0
+                    ),
+                    gcri_options=dict(
+                        use_code_tools=True,
+                        use_web_search=True,
+                        max_recursion_depth=None
+                    )
+                ),
+                memory=dict(
+                    model_id='gemini-2.5-flash-lite',
+                    parameters=dict(
+                        model_provider='google_genai',
+                        max_tokens=51200,
+                        temperature=0
+                    )
+                )
+            )
+        )
     )
 
 
@@ -564,11 +519,3 @@ def local_llama(config):
                 use_web_search=True
             )
         )
-
-
-@scope.observe()
-def set_benchmark_gaia(config):
-    config.limit = 0
-    config.use_inspect_sandbox = True
-    config.subset = '2023_all'
-    config.split = 'validation'
