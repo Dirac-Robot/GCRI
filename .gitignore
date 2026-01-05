@@ -3,22 +3,42 @@ __pycache__/
 *.py[oc]
 build/
 wheels/
-*.egg-info
+*.egg-info/
 
 # Virtual environments
-.venv
+.venv/
+.gcri/
 
 # Personal and temporary files
 .env
 .python-version
-.claude
+.claude/
 .idea/
 .DS_Store
 **/.DS_Store
+.pytest_cache/
 
-# Logs and temporary data
+# Logs and benchmark results
+logs/
+logs */
 gcri_logs/
+*.eval
 *workflow*.png
 
-# Task files
+# Build artifacts
+dist/
+
+# Node.js
+node_modules/
+
+# Task files and submissions
 tasks/
+submissions/
+
+# Temporary/scratch files
+*.txt
+!README.txt
+!requirements.txt
+
+# Lock files (optional, uncomment if needed)
+# uv.lock
