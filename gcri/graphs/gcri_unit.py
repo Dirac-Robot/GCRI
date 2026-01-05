@@ -123,6 +123,7 @@ class GCRI:
 
         self._graph = graph
         self._workflow = graph.compile()
+        logger.info('✅ GCRI Instance Initialized')
 
     @property
     def graph(self):
@@ -135,6 +136,7 @@ class GCRI:
     def map_branches(self, state: TaskState):
         logger.bind(ui_event='phase_change', phase='execution').info('Starting Branch Execution...')
         num_branches = min(len(self.config.agents.branches), len(state.strategies))
+        logger.info(f'🌿 Spawning {num_branches} parallel branches...')
         sends = []
 
         for index in range(num_branches):
@@ -159,12 +161,17 @@ class GCRI:
     def aggregate(self, state: TaskState):
         aggregated_results = []
         targets = self.config.protocols.aggregate_targets
+        accepted_count = 0
+        rejected_count = 0
         for result in state.results:
             if result.counter_strength == 'strong' and not self.config.protocols.accept_all:
+                rejected_count += 1
                 continue
+            accepted_count += 1
             result = result.model_dump(mode='json')
             converted_result = {key: result.get(key) for key in targets}
             aggregated_results.append(converted_result)
+        logger.info(f'📊 Aggregation: {accepted_count} accepted, {rejected_count} rejected (strong counter)')
         return {'aggregated_result': aggregated_results}
 
     def sample_strategies(self, state: TaskState):
@@ -248,7 +255,7 @@ class GCRI:
             node='hypothesis',
             branch=state.index,
             data={'type': 'processing'}
-        ).info(f'Iter #{state.count_in_branch+1} | Sampling hypothesis for strategy #{state.index+1}...')
+        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Sampling hypothesis...')
         container_id = state.container_id
         hypothesis_config = self.config.agents.branches[state.index].hypothesis
         agent = build_model(
@@ -270,7 +277,7 @@ class GCRI:
             node='hypothesis',
             branch=state.index,
             data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
-        ).info(f'Iter #{state.count_in_branch+1} | Sampled hypothesis #{state.index+1}: {hypothesis.hypothesis}')
+        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
         return {'hypothesis': hypothesis.hypothesis}
 
     def reasoning_and_refine(self, state: BranchState):
@@ -292,7 +299,7 @@ class GCRI:
             node='reasoning',
             branch=state.index,
             data={'type': 'processing'}
-        ).info(f'Iter #{state.count_in_branch+1} | Reasoning and refining hypothesis #{state.index+1}...')
+        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Reasoning...')
         container_id = state.container_id
         reasoning_config = self.config.agents.branches[state.index].reasoning
         agent = build_model(
@@ -319,8 +326,7 @@ class GCRI:
                 'container_id': container_id
             }
         ).info(
-            f'Iter #{state.count_in_branch+1} | '
-            f'Refined hypothesis #{state.index+1}: {reasoning.refined_hypothesis}'
+            f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Refined: {reasoning.refined_hypothesis[:80]}...'
         )
         return {
             'reasoning': reasoning.reasoning,
@@ -360,7 +366,7 @@ class GCRI:
             node='verification',
             branch=state.index,
             data={'type': 'processing'}
-        ).info(f'Iter #{state.count_in_branch+1} | Verifying refined hypothesis #{state.index+1}...')
+        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Verifying...')
         container_id = state.container_id
         verification_config = self.config.agents.branches[state.index].verification
         agent = build_model(
@@ -398,9 +404,8 @@ class GCRI:
                 'container_id': container_id
             }
         ).info(
-            f'Iter #{state.count_in_branch+1} | '
-            f'Counter-Example of Hypothesis #{state.index+1} (Counter Strength: {verification.counter_strength}): '
-            f'{verification.counter_example}'
+            f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Verification: '
+            f'{verification.counter_strength.upper()} counter'
         )
         return {'results': [result]}
 
@@ -436,7 +441,10 @@ class GCRI:
         with open(template_path, 'r') as f:
             template = f.read()
         force_output = self.config.protocols.get('force_output', False)
-        is_last_run = (state.count+1 >= self.config.protocols.max_iterations)
+        max_iter = self.config.protocols.max_iterations
+        if not isinstance(max_iter, int):
+            max_iter = int(max_iter) if max_iter is not None else 5
+        is_last_run = (state.count+1 >= max_iter)
         if force_output and is_last_run:
             logger.warning(
                 f'🚨 Force Output Triggered at Iter #{state.count+1}. '
@@ -612,8 +620,9 @@ class GCRI:
             start_index = 0
         try:
             for index in range(start_index, self.config.protocols.max_iterations):
+                logger.info('=' * 60)
                 logger.bind(ui_event='phase_change', phase='strategy', iteration=index).info(
-                    f'Starting Iteration {index+1}...'
+                    f'🔄 Starting Iteration {index+1}/{self.config.protocols.max_iterations}'
                 )
                 try:
                     result = self.workflow.invoke({
@@ -637,9 +646,10 @@ class GCRI:
                     logger.warning(f'Iteration {index+1} aborted by user.')
                     raise
                 except Exception as e:
-                    logger.error(f'Iteration {index+1} error: {e}')
+                    import traceback
+                    logger.error(f'Iteration {index+1} error: {e}\n{traceback.format_exc()}')
             else:
-                logger.info('Final result is not deduced, but iteration count is over.')
+                logger.warning('⚠️ Max iterations reached without final decision.')
         except (KeyboardInterrupt, TaskAbortedError) as e:
             is_abort = isinstance(e, TaskAbortedError)
             logger.warning('🛑 GCRI Task aborted by user.' if is_abort else 'GCRI Task interrupted by user (Ctrl+C).')
@@ -647,4 +657,7 @@ class GCRI:
                 result['final_output'] = 'Task aborted by user.'
             else:
                 result = {'final_output': 'Task aborted by user before first iteration completion.'}
+        finally:
+            self.sandbox.clean_up()
+            logger.info('🧹 Sandbox clean-up completed.')
         return result

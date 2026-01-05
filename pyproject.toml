@@ -103,7 +103,5 @@ gcri = "gcri.entry:main_entry"
 [tool.setuptools.package-data]
 "gcri" = ["templates/**/*", "dashboard/frontend/dist/**/*"]
 
-[dependency-groups]
-dev = [
-    "pytest>=9.0.2",
-]
+[project.entry-points.inspect_ai]
+gcri = "gcri.benchmark.model_provider"

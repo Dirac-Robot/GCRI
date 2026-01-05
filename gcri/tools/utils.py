@@ -7,13 +7,6 @@ from gcri.tools.docker_sandbox import get_sandbox
 
 
 class SandboxManager:
-    """
-    Manages isolated Docker sandbox environments for GCRI branch execution.
-
-    Creates Docker containers for each branch with complete isolation.
-    Handles merging winning branch results back to the project directory via docker cp.
-    """
-
     def __init__(self, config):
         self.config = config
         self._project_dir = config.project_dir
@@ -47,7 +40,6 @@ class SandboxManager:
         return self._docker_sandbox
 
     def setup(self):
-        """Initialize a new run with timestamped work directory."""
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         self._work_dir = os.path.join(self.run_dir, f'run-{timestamp}')
         self._log_dir = os.path.join(self.work_dir, 'logs')
@@ -56,12 +48,6 @@ class SandboxManager:
         os.makedirs(self.log_dir, exist_ok=True)
 
     def setup_branch(self, iteration_count, branch_index):
-        """
-        Create an isolated Docker container for a specific branch.
-
-        Returns:
-            str: Container ID for the branch.
-        """
         container_id = self.docker_sandbox.setup_branch(
             iteration_count, branch_index, self.project_dir
         )
@@ -87,24 +73,16 @@ class SandboxManager:
         return log_path
 
     def get_winning_branch_path(self, index, branch_index):
-        """Returns container ID for the winning branch."""
         return self._branch_containers.get((index, branch_index))
 
     def commit_winning_branch(self, container_id):
-        """
-        Copy files from winning branch container to project directory.
-
-        Args:
-            container_id: Docker container ID of the winning branch.
-        """
         if not container_id:
             logger.warning('No container ID provided for commit.')
             return
         self.docker_sandbox.commit_to_host(container_id, self.project_dir)
-        self.docker_sandbox.cleanup_container(container_id)
+        self.docker_sandbox.clean_up_container(container_id)
 
-    def cleanup(self):
-        """Cleanup all Docker containers."""
+    def clean_up(self):
         if self._docker_sandbox:
-            self._docker_sandbox.cleanup_all()
+            self._docker_sandbox.clean_up_all()
         self._branch_containers.clear()

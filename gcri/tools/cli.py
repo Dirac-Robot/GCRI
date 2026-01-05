@@ -29,6 +29,7 @@ class GlobalVariables:
     CONTAINER_VAR = None
     AUTO_MODE_FILE = None
     CONFIG = None
+    SANDBOX = None
 
 
 @scope
@@ -36,6 +37,13 @@ def set_global_variables(config):
     GlobalVariables.CONTAINER_VAR = ContextVar('container_id', default=None)
     GlobalVariables.AUTO_MODE_FILE = os.path.join(config.project_dir, '.gcri_auto_mode')
     GlobalVariables.CONFIG = config
+
+
+def get_cached_sandbox():
+    """Get cached sandbox instance for cli tools."""
+    if GlobalVariables.SANDBOX is None:
+        GlobalVariables.SANDBOX = get_sandbox(GlobalVariables.CONFIG or scope.config)
+    return GlobalVariables.SANDBOX
 
 
 
@@ -64,7 +72,7 @@ def execute_shell_command(command: str) -> str:
     container_id = get_container_id()
     if not container_id:
         return 'Error: No sandbox container available. Run within GCRI context.'
-    sandbox = get_sandbox(scope.config)
+    sandbox = get_cached_sandbox()
     return sandbox.execute_command(container_id, command)
 
 
@@ -74,7 +82,7 @@ def read_file(file_path: str) -> str:
     container_id = get_container_id()
     if not container_id:
         return f'Error: No sandbox container available.'
-    sandbox = get_sandbox(scope.config)
+    sandbox = get_cached_sandbox()
     result = sandbox._execute_in_container(container_id, ['cat', file_path])
     return result
 
@@ -85,7 +93,7 @@ def write_file(file_path: str, content: str) -> str:
     container_id = get_container_id()
     if not container_id:
         return f'Error: No sandbox container available.'
-    sandbox = get_sandbox(scope.config)
+    sandbox = get_cached_sandbox()
     dir_path = os.path.dirname(file_path)
     if dir_path:
         sandbox._execute_in_container(container_id, ['mkdir', '-p', dir_path])
@@ -102,7 +110,7 @@ def local_python_interpreter(code: str) -> str:
     container_id = get_container_id()
     if not container_id:
         return 'Error: No sandbox container available. Run within GCRI context.'
-    sandbox = get_sandbox(scope.config)
+    sandbox = get_cached_sandbox()
     return sandbox.execute_python(container_id, code)
 
 
@@ -153,7 +161,7 @@ def read_branch_file(branch_index: int, file_path: str) -> str:
     container_id = BranchContainerRegistry.get_container(branch_index)
     if not container_id:
         return f'Error: Branch {branch_index} container not found.'
-    sandbox = get_sandbox(scope.config)
+    sandbox = get_cached_sandbox()
     return sandbox._execute_in_container(container_id, ['cat', file_path])
 
 
@@ -169,7 +177,7 @@ def list_branch_files(branch_index: int, directory: str = '.') -> str:
     container_id = BranchContainerRegistry.get_container(branch_index)
     if not container_id:
         return f'Error: Branch {branch_index} container not found.'
-    sandbox = get_sandbox(scope.config)
+    sandbox = get_cached_sandbox()
     return sandbox._execute_in_container(container_id, ['ls', '-la', directory])
 
 
@@ -185,7 +193,7 @@ def run_branch_command(branch_index: int, command: str) -> str:
     container_id = BranchContainerRegistry.get_container(branch_index)
     if not container_id:
         return f'Error: Branch {branch_index} container not found.'
-    sandbox = get_sandbox(scope.config)
+    sandbox = get_cached_sandbox()
     return sandbox.execute_command(container_id, command)
 
 
@@ -408,7 +416,7 @@ class RecursiveToolAgent(Runnable):
                         logger.warning(f'Empty response from model (content type: {type(content).__name__}). Retrying...')
                         messages.append(HumanMessage(content='Your response was empty. Please provide the final answer or call a tool.'))
                         recursion_count += 1
-                        if recursion_count >= self.max_recursion_depth:
+                        if self.max_recursion_depth is not None and recursion_count >= self.max_recursion_depth:
                             logger.error('Max recursion depth reached with empty responses.')
                             return None
                         continue
@@ -485,11 +493,11 @@ def build_model(model_id, gcri_options=None, container_id=None, **parameters):
     if gcri_options is not None:
         use_code_tools = gcri_options.get('use_code_tools', False)
         use_web_search = gcri_options.get('use_web_search', False)
-        max_recursion_depth = gcri_options.get('max_recursion_depth', None)
+        max_recursion_depth = gcri_options.get('max_recursion_depth', 50)
     else:
         use_code_tools = False
         use_web_search = False
-        max_recursion_depth = None
+        max_recursion_depth = 50
     tools = CLI_TOOLS if use_code_tools else []
     tools += [search_web] if use_web_search else []
     return CodeAgentBuilder(
@@ -505,10 +513,10 @@ def build_decision_model(model_id, gcri_options=None, **parameters):
     """Model builder for Decision agent. Uses DECISION_TOOLS when use_code_tools=True."""
     if gcri_options is not None:
         use_code_tools = gcri_options.get('use_code_tools', False)
-        max_recursion_depth = gcri_options.get('max_recursion_depth', None)
+        max_recursion_depth = gcri_options.get('max_recursion_depth', 50)
     else:
         use_code_tools = False
-        max_recursion_depth = None
+        max_recursion_depth = 50
     tools = DECISION_TOOLS if use_code_tools else []
     return CodeAgentBuilder(
         model_id,
