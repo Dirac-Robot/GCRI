@@ -82,7 +82,80 @@ class SandboxManager:
         self.docker_sandbox.commit_to_host(container_id, self.project_dir)
         self.docker_sandbox.clean_up_container(container_id)
 
+    def setup_verification_branches(self, iteration_count, aggregated_branches, source_containers):
+        """
+        Setup containers for verification branches after aggregation.
+
+        Args:
+            iteration_count: Current iteration index.
+            aggregated_branches: List of AggregatedBranch from aggregator.
+            source_containers: Dict mapping original branch index to container ID.
+
+        Returns:
+            Dict mapping verification branch index to container ID.
+        """
+        verification_containers = {}
+
+        for branch in aggregated_branches:
+            if len(branch.source_indices) == 1:
+                # Single source: reuse existing container
+                src_idx = branch.source_indices[0]
+                src_container = source_containers.get(src_idx)
+                if src_container:
+                    verification_containers[branch.index] = src_container
+                    logger.debug(
+                        f'🔄 Verification branch {branch.index} reusing container from branch {src_idx}'
+                    )
+                else:
+                    logger.warning(f'Source container for branch {src_idx} not found')
+            else:
+                # Multiple sources: create new merged container
+                # For now, use the first source container (TODO: implement file merging)
+                primary_src = branch.source_indices[0]
+                src_container = source_containers.get(primary_src)
+                if src_container:
+                    verification_containers[branch.index] = src_container
+                    logger.debug(
+                        f'🔀 Verification branch {branch.index} using primary source {primary_src} '
+                        f'(merged from {branch.source_indices})'
+                    )
+                else:
+                    logger.warning(f'Primary source container for branch {primary_src} not found')
+
+        # Store verification containers with a different prefix to avoid conflicts
+        for v_idx, container_id in verification_containers.items():
+            self._branch_containers[(iteration_count, f'v_{v_idx}')] = container_id
+
+        return verification_containers
+
+    def get_verification_context(self, iteration_count, aggregated_branches):
+        """
+        Get file context for verification branches.
+
+        Args:
+            iteration_count: Current iteration index.
+            aggregated_branches: List of AggregatedBranch.
+
+        Returns:
+            Formatted string with container information.
+        """
+        file_contexts = []
+        for branch in aggregated_branches:
+            container_id = self._branch_containers.get((iteration_count, f'v_{branch.index}'))
+            sources = ', '.join(map(str, branch.source_indices))
+            if container_id:
+                file_contexts.append(
+                    f'- Verification Branch {branch.index} (from [{sources}]): '
+                    f'Container {container_id[:12]}'
+                )
+            else:
+                file_contexts.append(
+                    f'- Verification Branch {branch.index} (from [{sources}]): (Container not found)'
+                )
+        return '\n'.join(file_contexts)
+
     def clean_up(self):
         if self._docker_sandbox:
             self._docker_sandbox.clean_up_all()
         self._branch_containers.clear()
+

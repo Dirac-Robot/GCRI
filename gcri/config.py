@@ -78,6 +78,13 @@ def default(config):
             max_recursion_depth=None
         )
     )
+    config.agents.aggregator = dict(
+        model_id='gpt-5-mini',
+        parameters=ADict(
+            max_tokens=25600,
+            reasoning_effort='low'
+        )
+    )
     config.template_version = 'v0.1.1'
     config.plan.num_max_tasks = 5
     config.protocols = dict(
@@ -104,6 +111,11 @@ def default(config):
         network_mode='none'
     )
     config.num_branches = 2
+    config.branches_generator_type = 'default'  # 'default', 'deep', 'shallow'
+    config.aggregation = dict(
+        max_output_branches=3,
+        allow_single_source_passthrough=True
+    )
     with scope.lazy():
         config.agents.branches = [
             {
@@ -132,7 +144,8 @@ def default(config):
             decision=get_template_path('decision.txt', config.template_version),
             memory=get_template_path('memory.txt', config.template_version),
             active_memory=get_template_path('active_memory.txt', config.template_version),
-            global_rules=get_template_path('global_rules.txt', config.template_version)
+            global_rules=get_template_path('global_rules.txt', config.template_version),
+            aggregator=get_template_path('aggregator.txt', config.template_version)
         )
 
 

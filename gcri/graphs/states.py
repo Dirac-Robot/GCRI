@@ -3,7 +3,10 @@ from typing import List, Annotated, Optional, Literal, Dict, Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from gcri.graphs.schemas import BranchAnalysis, RefutationStatus, Strategy
+from gcri.graphs.schemas import (
+    BranchAnalysis, RefutationStatus, Strategy,
+    RawHypothesis, AggregatedBranch
+)
 
 
 class IterationLog(BaseModel):
@@ -99,6 +102,19 @@ class TaskState(BaseModel):
     )
     memory: StructuredMemory = Field(default_factory=StructuredMemory, description='Accumulated learnings across iterations')
     feedback: str = Field(default='', description='Formatted feedback incorporating memory and constraints')
+    # New fields for BranchesGenerator architecture
+    raw_hypotheses: Annotated[List[RawHypothesis], operator.add] = Field(
+        default_factory=list,
+        description='Hypotheses from BranchesGenerator before aggregation'
+    )
+    aggregated_branches: List[AggregatedBranch] = Field(
+        default_factory=list,
+        description='Branches after aggregation by HypothesisAggregator'
+    )
+    verification_container_map: Dict[int, str] = Field(
+        default_factory=dict,
+        description='Mapping from verification branch index to container ID'
+    )
 
 
 class BranchState(BaseModel):
@@ -121,6 +137,30 @@ class BranchState(BaseModel):
     reasoning: Optional[str] = Field(default=None, description='Reasoning evaluation of the hypothesis')
     container_id: str = Field(..., description='Docker container ID for isolated execution')
     results: List[HypothesisResult] = Field(default_factory=list, description='Results from this branch')
+    # Output field for BranchesGenerator
+    raw_hypothesis_output: Optional[RawHypothesis] = Field(
+        default=None,
+        description='RawHypothesis output from this branch (for aggregation)'
+    )
+
+
+class VerificationBranchState(BaseModel):
+    """
+    State for a verification branch after aggregation.
+
+    Contains the aggregated hypothesis to verify and the container for execution.
+    """
+    task_in_branch: str = Field(..., description='Task description for this branch')
+    intent_analysis_in_branch: str = Field(default='', description='Locked user intent for this branch')
+    count_in_branch: int = Field(default=0, description='Current iteration index')
+    strictness: Literal['strict', 'moderate', 'creative'] = Field(
+        default='moderate',
+        description='Strictness level for this branch'
+    )
+    aggregated_branch: AggregatedBranch = Field(..., description='Aggregated branch to verify')
+    index: int = Field(..., description='Verification branch index (0-based)')
+    container_id: str = Field(..., description='Container ID for isolated execution')
+    results: List[HypothesisResult] = Field(default_factory=list, description='Verification results')
 
 
 class GlobalState(BaseModel):
