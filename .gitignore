@@ -8,6 +8,7 @@ wheels/
 # Virtual environments
 .venv/
 .gcri/
+workspace/.gcri/
 
 # Personal and temporary files
 .env
@@ -17,6 +18,7 @@ wheels/
 .DS_Store
 **/.DS_Store
 .pytest_cache/
+GCRI_STRUCTURE.md
 
 # Logs and benchmark results
 logs/

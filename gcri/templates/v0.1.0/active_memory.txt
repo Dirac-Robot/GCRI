@@ -1,7 +1,0 @@
-Analyze the feedback. Extract active constraints for the next iteration.
-CRITICAL RULE: Do NOT convert a proposed answer or a specific hypothesis outcome into a constraint
-unless it is explicitly stated in the original user task. If the feedback says 'Prove that X is true',
-treat it as a goal to attempt, not a hard constraint that must be blindly followed if logic suggests otherwise.
-
-[Input Feedback]
-{global_feedback}

@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 from copy import deepcopy as dcp
@@ -10,7 +9,6 @@ from langgraph.graph import StateGraph, END, START
 from loguru import logger
 from pydantic import TypeAdapter
 
-from gcri.dashboard.backend.manager import manager
 from gcri.graphs.gcri_unit import GCRI, TaskAbortedError
 from gcri.graphs.schemas import Compression, create_planner_schema
 from gcri.graphs.states import StructuredMemory, GlobalState
@@ -104,19 +102,11 @@ class GCRIMetaPlanner:
         logger.info(f'Result of plan {state.plan_count} saved to: {path}')
 
     def _broadcast_state(self, state: GlobalState, stage: str):
-        try:
-            data = {
-                'plan_count': state.plan_count,
-                'goal': state.goal,
-                'current_task': state.current_task,
-                'knowledge_context': state.knowledge_context,
-                'memory': state.memory.model_dump(mode='json'),
-                'stage': stage,
-                'final_answer': state.final_answer
-            }
-            asyncio.run(manager.broadcast({'type': 'planner_state', 'data': data}))
-        except Exception:
-            pass
+        logger.bind(
+            ui_event='planner_state',
+            plan_count=state.plan_count,
+            stage=stage
+        ).info(f'Planner stage: {stage}')
 
     def plan(self, state: GlobalState):
         self._check_abort()

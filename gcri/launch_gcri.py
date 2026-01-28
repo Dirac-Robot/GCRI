@@ -35,6 +35,21 @@ def main(config):
 
     worker = GCRI(config)
     logger.info('🤖 GCRI Single Worker Started.')
+
+    initial_task = getattr(config, 'initial_task', None)
+    if initial_task:
+        logger.info(f'📝 Running initial task: {initial_task[:100]}...')
+        try:
+            result = worker(initial_task)
+            logger.info('🎉 Final Output:')
+            if result.get('final_output'):
+                logger.info(result['final_output'])
+            else:
+                logger.warning('Task finished without definitive final output.')
+        except Exception as e:
+            logger.error(f'(!) Task failed with error: {e}')
+        return
+
     logger.info('- Press [Ctrl+C] during input to EXIT.')
     logger.info('- Press [Ctrl+C] during task to ABORT task.')
     logger.info('- Type "q" to quit.\n')

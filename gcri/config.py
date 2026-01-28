@@ -30,7 +30,8 @@ def default(config):
     config.agents.planner = dict(
         model_id='gpt-5.2',
         parameters=ADict(
-            max_tokens=25600
+            max_tokens=25600,
+            reasoning_effort='low'
         ),
         gcri_options=ADict(
             use_web_search=True
@@ -39,37 +40,25 @@ def default(config):
     config.agents.compression = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_tokens=25600
+            max_tokens=25600,
+            reasoning_effort='low'
         )
     )
     config.agents.strategy_generator = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_tokens=25600
+            max_tokens=25600,
+            reasoning_effort='low'
         ),
         gcri_options=ADict(
             use_web_search=True
         )
     )
-    config.agents.branches = [
-        {
-            agent_name: ADict(
-                model_id='gpt-5-mini',
-                parameters=dict(
-                    max_tokens=25600
-                ),
-                gcri_options=ADict(
-                    use_code_tools=True,
-                    use_web_search=True,
-                    max_recursion_depth=None
-                )
-            ) for agent_name in AGENT_NAMES_IN_BRANCH
-        } for _ in range(3)
-    ]
     config.agents.decision = ADict(
         model_id='gpt-5.2',
         parameters=ADict(
-            max_tokens=25600
+            max_tokens=25600,
+            reasoning_effort='low'
         ),
         gcri_options=ADict(
             use_code_tools=True,
@@ -80,7 +69,8 @@ def default(config):
     config.agents.memory = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_tokens=25600
+            max_tokens=25600,
+            reasoning_effort='low'
         ),
         gcri_options=ADict(
             use_code_tools=True,
@@ -88,19 +78,7 @@ def default(config):
             max_recursion_depth=None
         )
     )
-    config.templates = dict(
-        planner=get_template_path('planner.txt', 'v0.1.0'),
-        compression=get_template_path('compression.txt', 'v0.1.0'),
-        black_and_white_lists=get_template_path('black_and_white_lists.json', 'v0.1.0'),
-        strategy_generator=get_template_path('strategy_generator.txt', 'v0.1.0'),
-        hypothesis=get_template_path('hypothesis.txt', 'v0.1.0'),
-        reasoning=get_template_path('reasoning.txt', 'v0.1.0'),
-        verification=get_template_path('verification.txt', 'v0.1.0'),
-        decision=get_template_path('decision.txt', 'v0.1.0'),
-        memory=get_template_path('memory.txt', 'v0.1.0'),
-        active_memory=get_template_path('active_memory.txt', 'v0.1.0'),
-        global_rules=get_template_path('global_rules.txt', 'v0.1.0')
-    )
+    config.template_version = 'v0.1.1'
     config.plan.num_max_tasks = 5
     config.protocols = dict(
         accept_all=True,
@@ -125,23 +103,37 @@ def default(config):
         cpu_limit=1.0,
         network_mode='none'
     )
-
-
-@scope.observe(lazy=True)
-def reduce_tokens(config):
-    config.templates = dict(
-        planner=get_template_path('planner.txt', 'v0.1.1'),
-        compression=get_template_path('compression.txt', 'v0.1.1'),
-        black_and_white_lists=get_template_path('black_and_white_lists.json', 'v0.1.1'),
-        strategy_generator=get_template_path('strategy_generator.txt', 'v0.1.1'),
-        hypothesis=get_template_path('hypothesis.txt', 'v0.1.1'),
-        reasoning=get_template_path('reasoning.txt', 'v0.1.1'),
-        verification=get_template_path('verification.txt', 'v0.1.1'),
-        decision=get_template_path('decision.txt', 'v0.1.1'),
-        memory=get_template_path('memory.txt', 'v0.1.1'),
-        active_memory=get_template_path('active_memory.txt', 'v0.1.1'),
-        global_rules=get_template_path('global_rules.txt', 'v0.1.1')
-    )
+    config.num_branches = 2
+    with scope.lazy():
+        config.agents.branches = [
+            {
+                agent_name: ADict(
+                    model_id='gpt-5-mini',
+                    parameters=dict(
+                        max_tokens=25600,
+                        reasoning_effort='low'
+                    ),
+                    gcri_options=ADict(
+                        use_code_tools=True,
+                        use_web_search=True,
+                        max_recursion_depth=None
+                    )
+                ) for agent_name in AGENT_NAMES_IN_BRANCH
+            } for _ in range(config.num_branches)
+        ]
+        config.templates = dict(
+            planner=get_template_path('planner.txt', config.template_version),
+            compression=get_template_path('compression.txt', config.template_version),
+            black_and_white_lists=get_template_path('black_and_white_lists.json', config.template_version),
+            strategy_generator=get_template_path('strategy_generator.txt', config.template_version),
+            hypothesis=get_template_path('hypothesis.txt', config.template_version),
+            reasoning=get_template_path('reasoning.txt', config.template_version),
+            verification=get_template_path('verification.txt', config.template_version),
+            decision=get_template_path('decision.txt', config.template_version),
+            memory=get_template_path('memory.txt', config.template_version),
+            active_memory=get_template_path('active_memory.txt', config.template_version),
+            global_rules=get_template_path('global_rules.txt', config.template_version)
+        )
 
 
 @scope.observe(default=True, lazy=True)
@@ -155,367 +147,51 @@ def apply_custom_config(config):
             logger.warning(f'Fallback to default config...')
 
 
-@scope.observe(lazy=True)
-def no_web_search(config):
-    for agent_name, agent_info in config.agents.items():
-        if agent_name == 'branches':
-            for branch_info in agent_info:
-                for branch_agent_name, branch_agent_info in branch_info.items():
-                    if 'gcri_options' in branch_agent_info:
-                        branch_agent_info.gcri_options.update(
-                            use_web_search=False
-                        )
-        else:
-            if 'gcri_options' in agent_info:
-                agent_info.gcri_options.update(
-                    use_web_search=False
-                )
-
-
-@scope.observe(lazy=True)
-def no_code_tools(config):
-    for agent_name, agent_info in config.agents.items():
-        if agent_name == 'branches':
-            for branch_info in agent_info:
-                for branch_agent_name, branch_agent_info in branch_info.items():
-                    if 'gcri_options' in branch_agent_info:
-                        branch_agent_info.gcri_options.update(
-                            use_code_tools=False
-                        )
-        else:
-            if 'gcri_options' in agent_info:
-                agent_info.gcri_options.update(
-                    use_code_tools=False
-                )
-
-
 @scope.observe()
-def large_models(config):
-    config.agents.branches = [
-        dict(
-            hypothesis=dict(
-                model_id='gpt-5.2',
-                parameters=dict(
-                    max_tokens=25600
-                ),
-                gcri_options=dict(
-                    use_code_tools=True,
-                    use_web_search=True,
-                    max_recursion_depth=None
-                )
-            ),
-            reasoning=dict(
-                model_id='gpt-5.2',
-                parameters=dict(
-                    max_tokens=25600
-                ),
-                gcri_options=dict(
-                    use_code_tools=True,
-                    use_web_search=True,
-                    max_recursion_depth=None
-                )
-            ),
-            verification=dict(
-                model_id='gpt-5-mini',
-                parameters=dict(
-                    max_tokens=25600
-                ),
-                gcri_options=dict(
-                    use_code_tools=True,
-                    use_web_search=True,
-                    max_recursion_depth=None
-                )
-            )
-        ) for _ in range(3)
-    ]
-
-
-@scope.observe()
-def gpt_4_1_based(config):
-    config.agents.branches = [
-        {
-            agent_name: dict(
-                model_id='gpt-4.1',
-                parameters=dict(
-                    max_tokens=25600
-                ),
-                gcri_options=dict(
-                    use_code_tools=True,
-                    use_web_search=True,
-                    max_recursion_depth=None
-                )
-            ) for agent_name in AGENT_NAMES_IN_BRANCH
-        } for _ in range(3)
-    ]
-
-
-@scope.observe()
-def gemini_based(config):
-    config.update(
-        dict(
-            agents=dict(
-                planner=dict(
-                    model_id='gemini-3-flash-preview',
-                    parameters=dict(
-                        model_provider='google_genai',
-                        max_tokens=51200,
-                        thinking_level='medium',
-                        temperature=0.1
-                    )
-                ),
-                compression=dict(
-                    model_id='gemini-2.5-flash-lite',
-                    parameters=dict(
-                        model_provider='google_genai',
-                        max_tokens=51200,
-                        temperature=0
-                    )
-                ),
-                strategy_generator=dict(
-                    model_id='gemini-3-flash-preview',
-                    parameters=dict(
-                        model_provider='google_genai',
-                        max_tokens=51200,
-                        thinking_level='medium',
-                        temperature=0.7
-                    )
-                ),
-                branches=[
-                    dict(
-                        hypothesis=dict(
-                            model_id='gemini-3-flash-preview',
-                            parameters=dict(
-                                model_provider='google_genai',
-                                max_tokens=51200,
-                                thinking_level='medium',
-                                temperature=0.2
-                            ),
-                            gcri_options=dict(
-                                use_code_tools=True,
-                                use_web_search=True,
-                                max_recursion_depth=None
-                            )
-                        ),
-                        reasoning=dict(
-                            model_id='gemini-3-flash-preview',
-                            parameters=dict(
-                                model_provider='google_genai',
-                                max_tokens=51200,
-                                thinking_level='medium',
-                                temperature=0.2
-                            ),
-                            gcri_options=dict(
-                                use_code_tools=True,
-                                use_web_search=True,
-                                max_recursion_depth=None
-                            )
-                        ),
-                        verification=dict(
-                            model_id='gemini-3-flash-preview',
-                            parameters=dict(
-                                model_provider='google_genai',
-                                max_tokens=51200,
-                                thinking_level='medium',
-                                temperature=0
-                            ),
-                            gcri_options=dict(
-                                use_code_tools=True,
-                                use_web_search=True,
-                                max_recursion_depth=None
-                            )
-                        )
-                    ) for _ in range(3)
-                ],
-                decision=dict(
-                    model_id='gemini-3-flash-preview',
-                    parameters=dict(
-                        model_provider='google_genai',
-                        max_tokens=51200,
-                        thinking_level='medium',
-                        temperature=0
-                    ),
-                    gcri_options=dict(
-                        use_code_tools=True,
-                        use_web_search=True,
-                        max_recursion_depth=None
-                    )
-                ),
-                memory=dict(
-                    model_id='gemini-2.5-flash-lite',
-                    parameters=dict(
-                        model_provider='google_genai',
-                        max_tokens=51200,
-                        temperature=0
-                    )
-                )
-            )
+def no_reasoning(config):
+    config.agents.planner = dict(
+        model_id='gpt-4.1',
+        parameters=ADict(
+            max_tokens=25600
+        ),
+        gcri_options=ADict(
+            use_web_search=True
         )
     )
-
-
-@scope.observe()
-def local_qwen(config):
-    config.agents.endpoint_url = 'http://localhost:8000/v1'
-
-    with scope.lazy():
-        config.agents.planner = dict(
-            model_id='Qwen/Qwen2.5-72B-Instruct',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            )
+    config.agents.compression = dict(
+        model_id='gpt-4.1-mini',
+        parameters=ADict(
+            max_tokens=25600
         )
-        config.agents.compression = dict(
-            model_id='Qwen/Qwen2.5-72B-Instruct',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            )
+    )
+    config.agents.strategy_generator = dict(
+        model_id='gpt-4.1-mini',
+        parameters=ADict(
+            max_tokens=25600
+        ),
+        gcri_options=ADict(
+            use_web_search=True
         )
-        config.agents.strategy_generator = dict(
-            model_id='Qwen/Qwen2.5-72B-Instruct',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            )
+    )
+    config.agents.decision = ADict(
+        model_id='gpt-4.1',
+        parameters=ADict(
+            max_tokens=25600
+        ),
+        gcri_options=ADict(
+            use_code_tools=True,
+            use_web_search=True,
+            max_recursion_depth=None
         )
-        config.agents.branches = [
-            {
-                agent_name: dict(
-                    model_id='Qwen/Qwen2.5-72B-Instruct',
-                    parameters=dict(
-                        max_tokens=25600,
-                        model_provider='openai',
-                        base_url=config.agents.endpoint_url,
-                        api_key='EMPTY',
-                        temperature=0
-                    ),
-                    gcri_options=dict(
-                        use_code_tools=True,
-                        use_web_search=True,
-                        max_recursion_depth=None
-                    )
-                ) for agent_name in AGENT_NAMES_IN_BRANCH
-            } for _ in range(3)
-        ]
-        config.agents.decision = dict(
-            model_id='Qwen/Qwen2.5-72B-Instruct',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            ),
-            gcri_options=dict(
-                use_code_tools=True,
-                use_web_search=True
-            )
+    )
+    config.agents.memory = dict(
+        model_id='gpt-4.1-mini',
+        parameters=ADict(
+            max_tokens=25600
+        ),
+        gcri_options=ADict(
+            use_code_tools=True,
+            use_web_search=True,
+            max_recursion_depth=None
         )
-        config.agents.memory = dict(
-            model_id='Qwen/Qwen2.5-72B-Instruct',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            ),
-            gcri_options=dict(
-                use_code_tools=True,
-                use_web_search=True
-            )
-        )
-
-
-@scope.observe()
-def local_llama(config):
-    config.agents.endpoint_url = 'http://localhost:8000/v1'
-
-    with scope.lazy():
-        config.agents.planner = dict(
-            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            )
-        )
-        config.agents.compression = dict(
-            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            )
-        )
-        config.agents.strategy_generator = dict(
-            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            )
-        )
-        config.agents.branches = [
-            {
-                agent_name: dict(
-                    model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-                    parameters=dict(
-                        max_tokens=25600,
-                        model_provider='openai',
-                        base_url=config.agents.endpoint_url,
-                        api_key='EMPTY',
-                        temperature=0
-                    ),
-                    gcri_options=dict(
-                        use_code_tools=True,
-                        use_web_search=True,
-                        max_recursion_depth=None
-                    )
-                ) for agent_name in AGENT_NAMES_IN_BRANCH
-            } for _ in range(3)
-        ]
-        config.agents.decision = dict(
-            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            ),
-            gcri_options=dict(
-                use_code_tools=True,
-                use_web_search=True
-            )
-        )
-        config.agents.memory = dict(
-            model_id='neuralmagic/Meta-Llama-3.1-405B-Instruct-FP8',
-            parameters=dict(
-                max_tokens=25600,
-                model_provider='openai',
-                base_url=config.agents.endpoint_url,
-                api_key='EMPTY',
-                temperature=0
-            ),
-            gcri_options=dict(
-                use_code_tools=True,
-                use_web_search=True
-            )
-        )
+    )
