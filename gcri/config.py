@@ -139,6 +139,7 @@ def default(config):
             black_and_white_lists=get_template_path('black_and_white_lists.json', config.template_version),
             strategy_generator=get_template_path('strategy_generator.txt', config.template_version),
             hypothesis=get_template_path('hypothesis.txt', config.template_version),
+            hypothesis_minimal=get_template_path('hypothesis_minimal.txt', config.template_version),
             reasoning=get_template_path('reasoning.txt', config.template_version),
             verification=get_template_path('verification.txt', config.template_version),
             decision=get_template_path('decision.txt', config.template_version),
@@ -168,13 +169,20 @@ def no_reasoning(config):
             max_tokens=25600
         ),
         gcri_options=ADict(
-            use_web_search=True
+            use_code_tools=True,
+            use_web_search=True,
+            max_recursion_depth=None
         )
     )
     config.agents.compression = dict(
         model_id='gpt-4.1-mini',
         parameters=ADict(
             max_tokens=25600
+        ),
+        gcri_options=ADict(
+            use_code_tools=True,
+            use_web_search=True,
+            max_recursion_depth=None
         )
     )
     config.agents.strategy_generator = dict(
@@ -183,7 +191,20 @@ def no_reasoning(config):
             max_tokens=25600
         ),
         gcri_options=ADict(
-            use_web_search=True
+            use_code_tools=True,
+            use_web_search=True,
+            max_recursion_depth=None
+        )
+    )
+    config.agents.aggregator = dict(
+        model_id='gpt-4.1',
+        parameters=ADict(
+            max_tokens=25600
+        ),
+        gcri_options=ADict(
+            use_code_tools=True,
+            use_web_search=True,
+            max_recursion_depth=None
         )
     )
     config.agents.decision = ADict(
@@ -208,3 +229,20 @@ def no_reasoning(config):
             max_recursion_depth=None
         )
     )
+
+    with scope.lazy():
+        config.agents.branches = [
+            {
+                agent_name: ADict(
+                    model_id='gpt-4.1-mini',
+                    parameters=dict(
+                        max_tokens=25600
+                    ),
+                    gcri_options=ADict(
+                        use_code_tools=True,
+                        use_web_search=True,
+                        max_recursion_depth=None
+                    )
+                ) for agent_name in AGENT_NAMES_IN_BRANCH
+            } for _ in range(config.num_branches)
+        ]

@@ -23,6 +23,7 @@ from gcri.graphs.states import (
 )
 from gcri.graphs.callbacks import AutoCallbacks
 from gcri.graphs.aggregator import HypothesisAggregator
+from gcri.graphs.generators import get_branches_generator
 from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry, set_global_variables
 from gcri.tools.utils import SandboxManager
 
@@ -68,36 +69,25 @@ class GCRI:
         with open(config.templates.global_rules, 'r') as f:
             self.global_rules = f.read()
 
-        # Initialize aggregator
-        self.aggregator = HypothesisAggregator(config)
+        # Initialize aggregator and generator
+        self.aggregator = HypothesisAggregator(config, self.sandbox.docker_sandbox)
+        generator_type = getattr(config, 'branches_generator_type', 'default')
+        self._branches_generator = get_branches_generator(
+            generator_type, config, self.sandbox, abort_event, self.global_rules
+        )
+        logger.info(f'🔧 BranchesGenerator type: {generator_type} ({type(self._branches_generator).__name__})')
 
         # Build main graph
         graph = StateGraph(TaskState)
 
-        # Phase 1: Hypothesis generation branch (sample_hypothesis + reasoning_and_refine)
-        hypothesis_branch = StateGraph(BranchState)
-        hypothesis_branch.add_node('sample_hypothesis', self.sample_hypothesis)
-        hypothesis_branch.add_node('reasoning_and_refine', self.reasoning_and_refine)
-        hypothesis_branch.add_edge(START, 'sample_hypothesis')
-        hypothesis_branch.add_edge('sample_hypothesis', 'reasoning_and_refine')
-        hypothesis_branch.add_edge('reasoning_and_refine', END)
-        self._hypothesis_workflow = hypothesis_branch.compile()
-
-        # Phase 2: Verification branch
+        # Verification branch workflow
         verification_branch = StateGraph(VerificationBranchState)
         verification_branch.add_node('verify', self.verify_aggregated)
         verification_branch.add_edge(START, 'verify')
         verification_branch.add_edge('verify', END)
         self._verification_workflow = verification_branch.compile()
 
-        # Initialize agents
-        strategy_generator_config = config.agents.strategy_generator
-        strategy_agent = build_model(
-            strategy_generator_config.model_id,
-            strategy_generator_config.get('gcri_options'),
-            **strategy_generator_config.parameters
-        ).with_structured_output(schema=Strategies)
-
+        # Initialize decision and memory agents (core GCRI components)
         decision_config = config.agents.decision
         decision_schema = create_decision_schema(schema=schema)
         logger.info(f'🔧 Custom output schema applied: {decision_schema.__name__}')
@@ -115,14 +105,12 @@ class GCRI:
             **memory_config.parameters
         ).with_structured_output(schema=ActiveConstraints)
 
-        self._strategy_agent = strategy_agent
         self._decision_agent = decision_agent
         self._memory_agent = memory_agent
 
         # Build main workflow graph
-        # Phase 1: Strategy + Hypothesis generation
-        graph.add_node('sample_strategies', self.sample_strategies)
-        graph.add_node('hypothesis_executor', self._hypothesis_workflow)
+        # Phase 1: Hypothesis generation via BranchesGenerator
+        graph.add_node('generate_branches', self.generate_branches)
 
         # Phase 2: Aggregation
         graph.add_node('aggregate_hypotheses', self.aggregate_hypotheses)
@@ -136,13 +124,8 @@ class GCRI:
         graph.add_node('update_memory', self.update_memory)
 
         # Connect edges
-        graph.add_edge(START, 'sample_strategies')
-        graph.add_conditional_edges(
-            'sample_strategies',
-            self.map_hypothesis_branches,
-            ['hypothesis_executor']
-        )
-        graph.add_edge('hypothesis_executor', 'aggregate_hypotheses')
+        graph.add_edge(START, 'generate_branches')
+        graph.add_edge('generate_branches', 'aggregate_hypotheses')
         graph.add_conditional_edges(
             'aggregate_hypotheses',
             self.map_verification_branches,
@@ -199,20 +182,28 @@ class GCRI:
             'Starting Hypothesis Aggregation...'
         )
 
-        # Use aggregator to combine/filter hypotheses
-        aggregation_result = self.aggregator.aggregate(state)
-
-        # Build source container map for verification
+        # Build source container map
         source_containers = {}
         for hyp in state.raw_hypotheses:
             source_containers[hyp.index] = hyp.container_id
 
-        # Setup verification containers
-        verification_containers = self.sandbox.setup_verification_branches(
-            state.count,
-            aggregation_result.branches,
-            source_containers
-        )
+        # Use aggregator to combine/filter hypotheses (with intelligent file merging)
+        aggregation_result = self.aggregator.aggregate(state, source_containers)
+
+        # Extract verification container map from aggregated branches
+        # Aggregator now handles container merging internally
+        verification_containers = {
+            branch.index: branch.container_id
+            for branch in aggregation_result.branches
+            if branch.container_id
+        }
+
+        # Clean up discarded branch containers
+        for hyp in state.raw_hypotheses:
+            if hyp.index in aggregation_result.discarded_indices:
+                if hyp.container_id:
+                    logger.debug(f'🗑️ Cleaning up discarded branch {hyp.index} container')
+                    self.sandbox.docker_sandbox.clean_up_container(hyp.container_id)
 
         return {
             'aggregated_branches': aggregation_result.branches,
@@ -278,44 +269,21 @@ class GCRI:
         """Legacy method - redirects to collect_verification."""
         return self.collect_verification(state)
 
-    def sample_strategies(self, state: TaskState):
-        logger.info(f'Iter #{state.count+1} | Request generating strategies...')
-        locked_intent = state.intent_analysis or 'None (Analyze Fresh)'
-        if state.intent_analysis:
-            logger.info(f'Iter #{state.count+1} | Using LOCKED Intent: {locked_intent}')
-        logger.bind(
-            ui_event='node_update',
-            node='strategy',
-            data={'type': 'processing'}
-        ).info('Generating strategies...')
-        template = self._load_template_with_rules(
-            self.config.templates.strategy_generator,
-            task=state.task,
-            feedback=state.feedback,
-            num_hypothesis=len(self.config.agents.branches),
-            locked_intent=locked_intent
-        )
-        strategies = self._invoke_with_retry(self.strategy_agent, template, 'Strategy agent')
-        for index, strategy in enumerate(strategies.strategies):
-            logger.info(f'Iter #{state.count+1} | Sampled strategy #{index+1}: {strategy}')
-        current_intent = state.intent_analysis or strategies.intent_analysis or ''
-        if not state.intent_analysis and strategies.intent_analysis:
-            logger.info(f'Iter #{state.count+1} | Intent Locked: {current_intent}')
-        logger.bind(
-            ui_event='node_update',
-            node='strategy',
-            data={
-                'task': state.task,
-                'strategies': [s.model_dump() for s in strategies.strategies],
-                'intent_analysis': current_intent,
-                'strictness': strategies.strictness
-            }
-        ).info('Strategies generated.')
-        return {
-            'task_strictness': strategies.strictness,
-            'strategies': strategies.strategies,
-            'intent_analysis': current_intent
-        }
+    def generate_branches(self, state: TaskState):
+        """Execute the configured BranchesGenerator to produce raw hypotheses.
+
+        This is the main entry point for hypothesis generation. The generator
+        is selected based on config.branches_generator_type.
+
+        Args:
+            state: TaskState with task and feedback.
+
+        Returns:
+            dict: Contains 'strategies', 'raw_hypotheses', and related metadata.
+        """
+        self._check_abort()
+        logger.info(f'Iter #{state.count+1} | Generating branches via {type(self._branches_generator).__name__}...')
+        return self._branches_generator.generate(state)
 
     def _check_abort(self):
         """Check if abort has been requested and raise TaskAbortedError if so."""
@@ -339,120 +307,6 @@ class GCRI:
             f'{error_context} could not generate output '
             f'for {self.config.protocols.max_tries_per_agent} times.'
         )
-
-    def sample_hypothesis(self, state: BranchState):
-        """
-        Generate an initial hypothesis for the given branch strategy.
-
-        Uses the configured hypothesis agent to propose a solution approach
-        based on the task, strategy, and accumulated feedback/memory.
-
-        Args:
-            state: BranchState containing task, strategy, and context.
-
-        Returns:
-            dict: Contains 'hypothesis' key with the generated hypothesis string.
-        """
-        self._check_abort()
-        logger.bind(
-            ui_event='node_update',
-            node='hypothesis',
-            branch=state.index,
-            data={'type': 'processing'}
-        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Sampling hypothesis...')
-        container_id = state.container_id
-        hypothesis_config = self.config.agents.branches[state.index].hypothesis
-        agent = build_model(
-            hypothesis_config.model_id,
-            hypothesis_config.get('gcri_options'),
-            container_id=container_id,
-            **hypothesis_config.parameters
-        ).with_structured_output(schema=Hypothesis)
-        template = self._load_template_with_rules(
-            self.config.templates.hypothesis,
-            task=state.task_in_branch,
-            strictness=state.strictness,
-            strategy=state.strategy,
-            intent_analysis=state.intent_analysis_in_branch
-        )
-        hypothesis = self._invoke_with_retry(agent, template, f'Hypothesis agent at strategy #{state.index+1}')
-        logger.bind(
-            ui_event='node_update',
-            node='hypothesis',
-            branch=state.index,
-            data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
-        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
-        return {'hypothesis': hypothesis.hypothesis}
-
-    def reasoning_and_refine(self, state: BranchState):
-        """
-        Apply reasoning to refine the current hypothesis.
-
-        Analyzes the hypothesis through structured reasoning and produces
-        a refined version with supporting rationale. Also creates RawHypothesis
-        for the aggregation phase.
-
-        Args:
-            state: BranchState with current hypothesis and context.
-
-        Returns:
-            dict: Contains 'reasoning', refined 'hypothesis', and 'raw_hypotheses' for aggregation.
-        """
-        self._check_abort()
-        logger.bind(
-            ui_event='node_update',
-            node='reasoning',
-            branch=state.index,
-            data={'type': 'processing'}
-        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Reasoning...')
-        container_id = state.container_id
-        reasoning_config = self.config.agents.branches[state.index].reasoning
-        agent = build_model(
-            reasoning_config.model_id,
-            reasoning_config.get('gcri_options'),
-            container_id=container_id,
-            **reasoning_config.parameters
-        ).with_structured_output(schema=Reasoning)
-        template = self._load_template_with_rules(
-            self.config.templates.reasoning,
-            task=state.task_in_branch,
-            strategy=state.strategy,
-            hypothesis=state.hypothesis,
-            intent_analysis=state.intent_analysis_in_branch
-        )
-        reasoning = self._invoke_with_retry(agent, template, f'Reasoning agent at hypothesis #{state.index+1}')
-
-        # Create RawHypothesis for aggregation
-        raw_hyp = RawHypothesis(
-            index=state.index,
-            strategy_name=state.strategy.name,
-            strategy_description=state.strategy.description,
-            hypothesis=reasoning.refined_hypothesis,
-            reasoning=reasoning.reasoning,
-            container_id=container_id
-        )
-
-        logger.bind(
-            ui_event='node_update',
-            node='reasoning',
-            branch=state.index,
-            data={
-                'reasoning': reasoning.reasoning,
-                'hypothesis': reasoning.refined_hypothesis,
-                'container_id': container_id
-            }
-        ).info(
-            f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Refined: {reasoning.refined_hypothesis[:80]}...'
-        )
-        return {
-            'reasoning': reasoning.reasoning,
-            'hypothesis': reasoning.refined_hypothesis,
-            'raw_hypotheses': [raw_hyp]  # Will be aggregated via operator.add
-        }
-
-    @property
-    def strategy_agent(self):
-        return self._strategy_agent
 
     @property
     def decision_agent(self):

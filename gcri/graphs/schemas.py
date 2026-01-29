@@ -107,6 +107,7 @@ class AggregatedBranch(BaseModel):
     combined_hypothesis: str = Field(..., description='Merged or refined hypothesis')
     source_indices: List[int] = Field(..., description='Original branch indices that were combined')
     merge_reasoning: str = Field(..., description='Why this combination was selected')
+    container_id: str = Field(default='', description='Container ID with merged files')
 
 
 class AggregationResult(BaseModel):

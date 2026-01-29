@@ -95,6 +95,7 @@ class SandboxManager:
             Dict mapping verification branch index to container ID.
         """
         verification_containers = {}
+        used_source_containers = set()
 
         for branch in aggregated_branches:
             if len(branch.source_indices) == 1:
@@ -103,24 +104,47 @@ class SandboxManager:
                 src_container = source_containers.get(src_idx)
                 if src_container:
                     verification_containers[branch.index] = src_container
+                    used_source_containers.add(src_idx)
                     logger.debug(
                         f'🔄 Verification branch {branch.index} reusing container from branch {src_idx}'
                     )
                 else:
                     logger.warning(f'Source container for branch {src_idx} not found')
             else:
-                # Multiple sources: create new merged container
-                # For now, use the first source container (TODO: implement file merging)
-                primary_src = branch.source_indices[0]
-                src_container = source_containers.get(primary_src)
-                if src_container:
-                    verification_containers[branch.index] = src_container
-                    logger.debug(
-                        f'🔀 Verification branch {branch.index} using primary source {primary_src} '
-                        f'(merged from {branch.source_indices})'
-                    )
+                # Multiple sources: create merged container
+                containers_to_merge = []
+                for src_idx in branch.source_indices:
+                    src_container = source_containers.get(src_idx)
+                    if src_container:
+                        containers_to_merge.append(src_container)
+                        used_source_containers.add(src_idx)
+
+                if containers_to_merge:
+                    try:
+                        merged_container = self.docker_sandbox.merge_containers(
+                            containers_to_merge, self.project_dir
+                        )
+                        verification_containers[branch.index] = merged_container
+                        logger.info(
+                            f'🔀 Verification branch {branch.index} merged from sources {branch.source_indices}'
+                        )
+                    except Exception as e:
+                        logger.error(f'Failed to merge containers for branch {branch.index}: {e}')
+                        # Fallback to first source
+                        if containers_to_merge:
+                            verification_containers[branch.index] = containers_to_merge[0]
                 else:
-                    logger.warning(f'Primary source container for branch {primary_src} not found')
+                    logger.warning(f'No source containers found for branch {branch.index}')
+
+        # Clean up unused source containers (discarded branches)
+        for src_idx, container_id in source_containers.items():
+            if src_idx not in used_source_containers:
+                logger.debug(f'🗑️ Cleaning up discarded branch {src_idx} container')
+                self.docker_sandbox.clean_up_container(container_id)
+                # Remove from tracking
+                key = (iteration_count, src_idx)
+                if key in self._branch_containers:
+                    del self._branch_containers[key]
 
         # Store verification containers with a different prefix to avoid conflicts
         for v_idx, container_id in verification_containers.items():

@@ -52,6 +52,8 @@ class DockerSandbox:
             subprocess.run(['docker', 'start', container_id], capture_output=True, timeout=10)
             self._copy_to_container(source_dir, container_id)
             self._sync_python_environment(source_dir, container_id)
+            # Create baseline marker for tracking file changes
+            self._execute_in_container(container_id, ['touch', '/workspace/.gcri_baseline'])
             self._containers[branch_id] = container_id
             logger.debug(f'🐳 Docker container created: {container_id[:12]} for branch {branch_id}')
             return container_id
@@ -161,6 +163,115 @@ class DockerSandbox:
             logger.debug(f'🗑️ Container {container_id[:12]} removed.')
         except Exception as e:
             logger.warning(f'Failed to remove container: {e}')
+
+    def merge_containers(self, source_containers: list, source_dir: str) -> str:
+        """
+        Create a new container with merged files from multiple source containers.
+
+        Files from later containers override files from earlier ones if paths conflict.
+
+        Args:
+            source_containers: List of container IDs to merge from.
+            source_dir: Original project directory for base setup.
+
+        Returns:
+            New container ID with merged files.
+        """
+        if not source_containers:
+            raise ValueError('No source containers provided for merge.')
+
+        if len(source_containers) == 1:
+            # Only one source, just return it (no merge needed)
+            return source_containers[0]
+
+        merge_id = uuid.uuid4().hex[:8]
+        container_name = f'gcri_merged_{merge_id}'
+        temp_merge_dir = f'/tmp/gcri_merge_{merge_id}'
+
+        try:
+            os.makedirs(temp_merge_dir, exist_ok=True)
+
+            # Copy files from each container in order (later overwrites earlier)
+            for i, container_id in enumerate(source_containers):
+                logger.debug(f'🔀 Merging files from container {i+1}/{len(source_containers)}: {container_id[:12]}')
+                container_temp = f'{temp_merge_dir}/source_{i}'
+                os.makedirs(container_temp, exist_ok=True)
+
+                # Copy from container to temp
+                copy_result = subprocess.run(
+                    ['docker', 'cp', f'{container_id}:/workspace/.', container_temp],
+                    capture_output=True,
+                    timeout=60
+                )
+                if copy_result.returncode != 0:
+                    logger.warning(f'Failed to copy from container {container_id[:12]}: {copy_result.stderr}')
+                    continue
+
+                # Merge into main temp dir (overwrite existing)
+                for item in os.listdir(container_temp):
+                    src = os.path.join(container_temp, item)
+                    dst = os.path.join(temp_merge_dir, 'merged', item)
+                    os.makedirs(os.path.join(temp_merge_dir, 'merged'), exist_ok=True)
+
+                    if os.path.isdir(src):
+                        if os.path.exists(dst):
+                            # Merge directories recursively
+                            self._merge_directories(src, dst)
+                        else:
+                            shutil.copytree(src, dst)
+                    else:
+                        shutil.copy2(src, dst)
+
+            # Create new container
+            create_cmd = [
+                'docker', 'create',
+                '--name', container_name,
+                f'--memory={self.memory_limit}',
+                f'--cpus={self.cpu_limit}',
+                f'--network={self.network_mode}',
+                '-w', '/workspace',
+                '-t',
+                self.image,
+                'tail', '-f', '/dev/null'
+            ]
+            result = subprocess.run(create_cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                raise RuntimeError(f'Failed to create merged container: {result.stderr}')
+
+            new_container_id = result.stdout.strip()
+            subprocess.run(['docker', 'start', new_container_id], capture_output=True, timeout=10)
+
+            # Copy merged files to new container
+            merged_dir = os.path.join(temp_merge_dir, 'merged')
+            if os.path.exists(merged_dir):
+                subprocess.run(
+                    ['docker', 'cp', f'{merged_dir}/.', f'{new_container_id}:/workspace'],
+                    capture_output=True,
+                    timeout=60
+                )
+
+            logger.info(f'🔀 Created merged container {new_container_id[:12]} from {len(source_containers)} sources')
+            return new_container_id
+
+        except Exception as e:
+            logger.error(f'Failed to merge containers: {e}')
+            raise
+        finally:
+            if os.path.exists(temp_merge_dir):
+                shutil.rmtree(temp_merge_dir)
+
+    def _merge_directories(self, src: str, dst: str):
+        """Recursively merge src directory into dst, overwriting conflicts."""
+        for item in os.listdir(src):
+            s = os.path.join(src, item)
+            d = os.path.join(dst, item)
+            if os.path.isdir(s):
+                if os.path.exists(d):
+                    self._merge_directories(s, d)
+                else:
+                    shutil.copytree(s, d)
+            else:
+                shutil.copy2(s, d)
 
     def clean_up_all(self):
         for branch_id, container_id in list(self._containers.items()):

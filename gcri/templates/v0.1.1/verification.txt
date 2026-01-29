@@ -14,22 +14,29 @@ PROCEDURE:
    - What inclusions are required?
    - What exclusions are forbidden?
 
-2. EXECUTE & VERIFY (if tools available):
+2. LOGICAL ANALYSIS (MANDATORY - do this BEFORE running code):
+   - READ the code/content carefully. Does the LOGIC match the task intent?
+   - Check for semantic correctness: Are the outputs what the task actually asked for?
+   - Verify claims: If the hypothesis makes factual claims, are they supported?
+   - Execution success does NOT mean logical correctness. A test that always returns True is useless.
+
+3. EXECUTE & VERIFY (if tools available):
    - Code → run it. Crash = STRONG counter-example.
    - File paths in hypothesis → open and verify contents.
-   - Missing/failing files = STRONG counter-example.
+   - BUT: passing tests written by the Generator are NOT proof of correctness.
+   - You must independently verify that the output satisfies the original task intent.
 
-3. TEST HYPOTHESIS against criteria:
+4. TEST HYPOTHESIS against criteria:
    - Does it meet all inclusions?
    - Does it avoid all exclusions?
    - Probe weak points from reasoning.
 
-4. ON FAILURE:
+5. ON FAILURE:
    - Select most representative failure as counter_example
    - FIX hypothesis yourself (minimal edit, preserve strategy)
    - Log changes in adjustment
 
-5. ON SUCCESS:
+6. ON SUCCESS:
    - hypothesis unchanged, counter_example="", adjustment="", counter_strength="none"
 
 COUNTER_STRENGTH LEVELS:
