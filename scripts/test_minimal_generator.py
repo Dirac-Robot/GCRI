@@ -80,7 +80,7 @@ NOTE: No "correct" answer exists. Quality of reasoning matters.
     print('Starting GCRI pipeline...\n')
 
     # Run full GCRI pipeline (auto commit to save code)
-    result = gcri(task, commit_mode='auto')
+    result = gcri(task, commit_mode='auto-accept')
 
     print('\n' + '='*60)
     print('Final Result:')

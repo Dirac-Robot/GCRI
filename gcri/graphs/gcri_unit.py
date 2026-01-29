@@ -662,6 +662,11 @@ class GCRI:
 
     def __call__(self, task, initial_memory=None, commit_mode='manual'):
         """Execute the GCRI reasoning loop for a given task."""
+        valid_modes = {'manual', 'auto-accept'}
+        if commit_mode not in valid_modes:
+            raise ValueError(
+                f"Invalid commit_mode='{commit_mode}'. Must be one of: {valid_modes}"
+            )
         self.sandbox.setup()
         result = None
         if isinstance(task, dict):
