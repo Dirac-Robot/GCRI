@@ -108,24 +108,20 @@ Failed attempts are converted into constraints, making the system smarter with e
 ## Quick Start
 
 ### Prerequisites
-- Python 3.11+ recommended
-- Install dependencies with pip (requirements.txt included)
-- Set up environment variables in .env file (e.g., OPENAI_API_KEY)
+- Python 3.12+ required
+- Docker (for sandbox isolation)
+- Set up environment variables in .env file (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY)
 
 ### Installation
 
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/GCRI.git
+# Install from PyPI
+pip install gcri
+
+# Or clone repository for development
+git clone https://github.com/Dirac-Robot/GCRI.git
 cd GCRI
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate   # macOS / Linux
-# .\.venv\Scripts\activate  # Windows
-
-# Install dependencies
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Basic Usage
@@ -171,9 +167,9 @@ GCRI provides pre-configured presets in the `presets/` directory for convenience
 - **Lightweight:** Fast execution with minimal resource usage
 
 ### Supported Providers
-- **GPT-5 series** (`gpt_5_*.json`)
-- **Claude series** (`claude_*.json`)
-- **Gemini series** (`gemini_*.json`)
+- **OpenAI** (GPT-4o, GPT-4o-mini)
+- **Anthropic** (Claude 4 Sonnet, Claude 4.5 Haiku)
+- **Google** (Gemini 2.5 Pro, Gemini 2.5 Flash)
 - **Mixed providers** (`mixed_*.json`)
 - **Local models** (`local_*.json`)
 
@@ -251,7 +247,11 @@ Decision agent performs mandatory audits:
 Main workflow executor.
 
 ```python
-GCRI(config)(task: str, initial_memory: StructuredMemory = None) -> dict
+GCRI(config)(
+    task: str,
+    initial_memory: StructuredMemory = None,
+    commit_mode: str = 'manual'  # 'manual' or 'auto-accept'
+) -> dict
 ```
 
 Returns:
@@ -351,14 +351,14 @@ We welcome contributions! Please follow these guidelines:
 
 ## License
 
-This project is currently without a license file. If you want to open source this project, please add an appropriate license such as MIT or Apache-2.0.
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
 ## Contact & Support
 
-- **Issues:** [GitHub Issues](https://github.com/yourusername/GCRI/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/yourusername/GCRI/discussions)
+- **Issues:** [GitHub Issues](https://github.com/Dirac-Robot/GCRI/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/Dirac-Robot/GCRI/discussions)
 
 ---
 
