@@ -626,6 +626,222 @@ class LowThinkGenerator(BaseBranchesGenerator):
         }
 
 
+class AdaptiveThinkGenerator(BaseBranchesGenerator):
+    """
+    Adaptive branch generator that decides refinement based on task strictness.
+
+    - strictness='strict' → Full refinement (DeepThink behavior)
+    - strictness='moderate' or 'creative' → No refinement (LowThink behavior)
+
+    This eliminates the need to manually choose between DeepThink and LowThink,
+    as the decision is made automatically based on task analysis.
+    """
+
+    def _generate_branch_with_refine(self, index, task, strategy, intent_analysis, strictness, feedback, count, base_container_id=None):
+        """Generate hypothesis with reasoning refinement (DeepThink path)."""
+        self._check_abort()
+
+        # Setup container
+        if base_container_id:
+            container_id = self.sandbox.setup_branch_from_base(count, index, base_container_id)
+        else:
+            container_id = self.sandbox.setup_branch(count, index)
+
+        # Step 1: Generate hypothesis
+        logger.bind(
+            ui_event='node_update',
+            node='hypothesis',
+            branch=index,
+            data={'type': 'processing'}
+        ).info(f'[Adaptive:Strict] Iter #{count+1} | Branch[{index}] Sampling hypothesis...')
+
+        hypothesis_config = self.config.agents.branches[index].hypothesis
+        hyp_agent = build_model(
+            hypothesis_config.model_id,
+            hypothesis_config.get('gcri_options'),
+            container_id=container_id,
+            **hypothesis_config.parameters
+        ).with_structured_output(schema=Hypothesis)
+
+        hyp_template = self._load_template_with_rules(
+            self.config.templates.hypothesis,
+            task=task,
+            strictness=strictness,
+            strategy=strategy,
+            intent_analysis=intent_analysis
+        )
+        hypothesis = self._invoke_with_retry(
+            hyp_agent, hyp_template, f'Hypothesis agent at strategy #{index+1}'
+        )
+
+        logger.bind(
+            ui_event='node_update',
+            node='hypothesis',
+            branch=index,
+            data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
+        ).info(f'[Adaptive:Strict] Iter #{count+1} | Branch[{index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
+
+        # Step 2: Reasoning and refine
+        self._check_abort()
+        logger.bind(
+            ui_event='node_update',
+            node='reasoning',
+            branch=index,
+            data={'type': 'processing'}
+        ).info(f'[Adaptive:Strict] Iter #{count+1} | Branch[{index}] Reasoning and refining...')
+
+        reasoning_config = self.config.agents.branches[index].reasoning
+        reason_agent = build_model(
+            reasoning_config.model_id,
+            reasoning_config.get('gcri_options'),
+            container_id=container_id,
+            **reasoning_config.parameters
+        ).with_structured_output(schema=Reasoning)
+
+        reason_template = self._load_template_with_rules(
+            self.config.templates.reasoning,
+            task=task,
+            strategy=strategy,
+            hypothesis=hypothesis.hypothesis,
+            intent_analysis=intent_analysis
+        )
+        reasoning = self._invoke_with_retry(
+            reason_agent, reason_template, f'Reasoning agent at hypothesis #{index+1}'
+        )
+
+        raw_hyp = RawHypothesis(
+            index=index,
+            strategy_name=strategy.name,
+            strategy_description=strategy.description,
+            hypothesis=reasoning.refined_hypothesis,
+            reasoning=reasoning.reasoning,
+            container_id=container_id
+        )
+
+        logger.bind(
+            ui_event='node_update',
+            node='reasoning',
+            branch=index,
+            data={
+                'reasoning': reasoning.reasoning,
+                'hypothesis': reasoning.refined_hypothesis,
+                'container_id': container_id
+            }
+        ).info(f'[Adaptive:Strict] Iter #{count+1} | Branch[{index}] Refined: {reasoning.refined_hypothesis[:80]}...')
+
+        return raw_hyp
+
+    def _generate_branch_no_refine(self, index, task, strategy, intent_analysis, strictness, feedback, count, base_container_id=None):
+        """Generate hypothesis without refinement (LowThink path)."""
+        self._check_abort()
+
+        # Setup container
+        if base_container_id:
+            container_id = self.sandbox.setup_branch_from_base(count, index, base_container_id)
+        else:
+            container_id = self.sandbox.setup_branch(count, index)
+
+        logger.bind(
+            ui_event='node_update',
+            node='hypothesis',
+            branch=index,
+            data={'type': 'processing'}
+        ).info(f'[Adaptive:Fast] Iter #{count+1} | Branch[{index}] Sampling hypothesis (no refine)...')
+
+        hypothesis_config = self.config.agents.branches[index].hypothesis
+        agent = build_model(
+            hypothesis_config.model_id,
+            hypothesis_config.get('gcri_options'),
+            container_id=container_id,
+            **hypothesis_config.parameters
+        ).with_structured_output(schema=Hypothesis)
+
+        template = self._load_template_with_rules(
+            self.config.templates.hypothesis,
+            task=task,
+            strictness=strictness,
+            strategy=strategy,
+            intent_analysis=intent_analysis
+        )
+        hypothesis = self._invoke_with_retry(
+            agent, template, f'Hypothesis agent at strategy #{index+1}'
+        )
+
+        raw_hyp = RawHypothesis(
+            index=index,
+            strategy_name=strategy.name,
+            strategy_description=strategy.description,
+            hypothesis=hypothesis.hypothesis,
+            reasoning='[Adaptive:Fast - No refinement applied]',
+            container_id=container_id
+        )
+
+        logger.bind(
+            ui_event='node_update',
+            node='hypothesis',
+            branch=index,
+            data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
+        ).info(f'[Adaptive:Fast] Iter #{count+1} | Branch[{index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
+
+        return raw_hyp
+
+    def generate(self, state: TaskState) -> dict:
+        """Generate strategies and hypotheses with adaptive refinement."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # Step 1: Sample strategies (this also determines strictness)
+        strategies_result = self._sample_strategies(state)
+        strictness = strategies_result['task_strictness']
+
+        # Step 2: Decide refinement based on strictness
+        should_refine = (strictness == 'strict')
+        mode_label = 'Strict (with refine)' if should_refine else 'Fast (no refine)'
+
+        logger.bind(ui_event='phase_change', phase='hypothesis_generation').info(
+            f'[Adaptive] Starting Generation - Mode: {mode_label}'
+        )
+        logger.info(f'📊 [Adaptive] Strictness={strictness} → Refine={should_refine}')
+
+        num_branches = min(len(self.config.agents.branches), len(strategies_result['strategies']))
+        logger.info(f'🌿 [Adaptive] Spawning {num_branches} hypothesis branches...')
+
+        # Check for base sandbox
+        base_container = getattr(state.memory, 'base_sandbox_container_id', None)
+        if base_container:
+            logger.info(f'📦 [Adaptive] Using base sandbox {base_container[:12]} for all branches')
+
+        raw_hypotheses = [None]*num_branches
+
+        # Choose the appropriate generation method based on strictness
+        generate_fn = self._generate_branch_with_refine if should_refine else self._generate_branch_no_refine
+
+        with ThreadPoolExecutor(max_workers=num_branches) as executor:
+            futures = {
+                executor.submit(
+                    generate_fn,
+                    index=i,
+                    task=state.task,
+                    strategy=strategies_result['strategies'][i],
+                    intent_analysis=strategies_result['intent_analysis'],
+                    strictness=strictness,
+                    feedback=state.feedback or '',
+                    count=state.count,
+                    base_container_id=base_container
+                ): i for i in range(num_branches)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                raw_hyp = future.result()
+                raw_hypotheses[idx] = raw_hyp
+
+        return {
+            'strategies': strategies_result['strategies'],
+            'intent_analysis': strategies_result['intent_analysis'],
+            'task_strictness': strictness,
+            'raw_hypotheses': raw_hypotheses
+        }
+
+
 class MinimalBranchOutput(BaseModel):
     """Combined output for MinimalThinkGenerator - strategy and hypothesis in one shot."""
     strategy_name: str = Field(..., description='A short name for the approach taken')
@@ -757,7 +973,7 @@ def get_branches_generator(generator_type: str, config, sandbox, abort_event=Non
     """Factory function to get the appropriate BranchesGenerator.
 
     Args:
-        generator_type: One of 'default', 'deep', 'low', 'minimal'
+        generator_type: One of 'default', 'deep', 'low', 'adaptive', 'minimal'
         config: Configuration object
         sandbox: SandboxManager instance
         abort_event: Optional threading.Event for cooperative cancellation
@@ -770,6 +986,7 @@ def get_branches_generator(generator_type: str, config, sandbox, abort_event=Non
         'default': DefaultBranchesGenerator,
         'deep': DeepThinkGenerator,
         'low': LowThinkGenerator,
+        'adaptive': AdaptiveThinkGenerator,
         'minimal': MinimalThinkGenerator,
     }
     generator_cls = generators.get(generator_type, DefaultBranchesGenerator)
