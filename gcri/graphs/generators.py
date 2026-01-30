@@ -251,9 +251,19 @@ class DefaultBranchesGenerator(BaseBranchesGenerator):
         num_branches = min(len(self.config.agents.branches), len(state.strategies))
         logger.info(f'🌿 Spawning {num_branches} hypothesis branches...')
 
+        # Check for base sandbox from previous iteration
+        base_container = getattr(state.memory, 'base_sandbox_container_id', None)
+        if base_container:
+            logger.info(f'📦 Using base sandbox {base_container[:12]} for all branches')
+
         sends = []
         for index in range(num_branches):
-            container_id = self.sandbox.setup_branch(state.count, index)
+            if base_container:
+                container_id = self.sandbox.setup_branch_from_base(
+                    state.count, index, base_container
+                )
+            else:
+                container_id = self.sandbox.setup_branch(state.count, index)
             sends.append(Send('branch_executor', {
                 'index': index,
                 'count_in_branch': state.count,
@@ -428,9 +438,19 @@ class DeepThinkGenerator(BaseBranchesGenerator):
         num_branches = min(len(self.config.agents.branches), len(state.strategies))
         logger.info(f'🌿 [DeepThink] Spawning {num_branches} hypothesis branches...')
 
+        # Check for base sandbox from previous iteration
+        base_container = getattr(state.memory, 'base_sandbox_container_id', None)
+        if base_container:
+            logger.info(f'📦 [DeepThink] Using base sandbox {base_container[:12]} for all branches')
+
         sends = []
         for index in range(num_branches):
-            container_id = self.sandbox.setup_branch(state.count, index)
+            if base_container:
+                container_id = self.sandbox.setup_branch_from_base(
+                    state.count, index, base_container
+                )
+            else:
+                container_id = self.sandbox.setup_branch(state.count, index)
             sends.append(Send('branch_executor', {
                 'index': index,
                 'count_in_branch': state.count,
@@ -481,12 +501,15 @@ class LowThinkGenerator(BaseBranchesGenerator):
 
     # Uses parent's __init__, no workflow needed (ThreadPoolExecutor pattern)
 
-    def _generate_branch_hypothesis(self, index, task, strategy, intent_analysis, strictness, feedback, count):
+    def _generate_branch_hypothesis(self, index, task, strategy, intent_analysis, strictness, feedback, count, base_container_id=None):
         """Generate hypothesis for a single branch - callable directly from ThreadPoolExecutor."""
         self._check_abort()
 
-        # Setup container for this branch
-        container_id = self.sandbox.setup_branch(count, index)
+        # Setup container - use base sandbox if available
+        if base_container_id:
+            container_id = self.sandbox.setup_branch_from_base(count, index, base_container_id)
+        else:
+            container_id = self.sandbox.setup_branch(count, index)
 
         logger.bind(
             ui_event='node_update',
@@ -569,6 +592,11 @@ class LowThinkGenerator(BaseBranchesGenerator):
         num_branches = min(len(self.config.agents.branches), len(strategies_result['strategies']))
         logger.info(f'🌿 [LowThink] Spawning {num_branches} hypothesis branches (no refine)...')
 
+        # Check for base sandbox from previous iteration
+        base_container = getattr(state.memory, 'base_sandbox_container_id', None)
+        if base_container:
+            logger.info(f'📦 [LowThink] Using base sandbox {base_container[:12]} for all branches')
+
         raw_hypotheses = [None]*num_branches
 
         with ThreadPoolExecutor(max_workers=num_branches) as executor:
@@ -581,7 +609,8 @@ class LowThinkGenerator(BaseBranchesGenerator):
                     intent_analysis=strategies_result['intent_analysis'],
                     strictness=strategies_result['task_strictness'],
                     feedback=state.feedback or '',
-                    count=state.count
+                    count=state.count,
+                    base_container_id=base_container
                 ): i for i in range(num_branches)
             }
             for future in as_completed(futures):
@@ -615,11 +644,15 @@ class MinimalThinkGenerator(BaseBranchesGenerator):
     def __init__(self, config, sandbox, abort_event=None, global_rules=''):
         super().__init__(config, sandbox, abort_event, global_rules)
 
-    def _generate_branch(self, index: int, task: str, feedback: str, count: int) -> RawHypothesis:
+    def _generate_branch(self, index: int, task: str, feedback: str, count: int, base_container_id: str = None) -> RawHypothesis:
         """Generate strategy + hypothesis for a single branch."""
         self._check_abort()
 
-        container_id = self.sandbox.setup_branch(count, index)
+        # Setup container - use base sandbox if available
+        if base_container_id:
+            container_id = self.sandbox.setup_branch_from_base(count, index, base_container_id)
+        else:
+            container_id = self.sandbox.setup_branch(count, index)
 
         logger.bind(
             ui_event='node_update',
@@ -682,6 +715,11 @@ class MinimalThinkGenerator(BaseBranchesGenerator):
         num_branches = 1  # Always 1 branch for MinimalThink
         logger.info(f'🌿 [MinimalThink] Spawning {num_branches} branch...')
 
+        # Check for base sandbox from previous iteration
+        base_container = getattr(state.memory, 'base_sandbox_container_id', None)
+        if base_container:
+            logger.info(f'📦 [MinimalThink] Using base sandbox {base_container[:12]}')
+
         raw_hypotheses = [None]*num_branches
         strategies = [None]*num_branches
 
@@ -692,7 +730,8 @@ class MinimalThinkGenerator(BaseBranchesGenerator):
                     index=i,
                     task=state.task,
                     feedback=state.feedback or '',
-                    count=state.count
+                    count=state.count,
+                    base_container_id=base_container
                 ): i for i in range(num_branches)
             }
             for future in as_completed(futures):

@@ -1,0 +1,41 @@
+ROLE: Sandbox Curator (Memory Agent Extension)
+
+TASK: {task}
+DECISION_RESULT: {decision}
+GLOBAL_FEEDBACK: {global_feedback}
+
+BRANCH_EVALUATIONS:
+{branch_evaluations}
+
+BRANCH_FILES (created/modified by each branch):
+{branch_files}
+
+PURPOSE: Analyze this iteration's sandbox outputs and decide what to preserve for the next iteration.
+
+PROCEDURE:
+
+1. ANALYZE EACH BRANCH:
+   - Review the branch's status (VALID, PARTIAL, REFUTED)
+   - Examine the files it created/modified
+   - Assess if the artifacts are valuable even if the hypothesis was rejected
+
+2. SELECT BRANCHES TO MERGE:
+   - VALID branches: Always select if files exist
+   - PARTIALLY_VALID branches: Select if they contain useful partial work
+   - REFUTED branches: Usually skip, unless they contain infrastructure work
+   - If NO branch has valuable artifacts, return empty selection
+
+3. RESOLVE FILE CONFLICTS:
+   - If multiple branches modified the same file, choose the best version
+   - Provide reasoning for your choice
+
+4. GENERATE FEEDBACK:
+   - Summarize what the next iteration will inherit
+   - Suggest how to build upon the merged sandbox
+
+CONSTRAINTS:
+- Do NOT select branches with hallucinated/non-existent files
+- Prefer quality over quantity - fewer well-chosen files > many broken ones
+- If decision was TRUE (task completed), you may still curate for potential follow-up iterations
+
+OUTPUT: selected_branch_indices, merge_reasoning, file_selection, feedback_for_next_iteration

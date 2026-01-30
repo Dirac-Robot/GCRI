@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Literal
+from typing import List, Literal, Dict
 from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
@@ -118,6 +118,26 @@ class AggregationResult(BaseModel):
         description='Original branch indices that were discarded'
     )
     aggregation_summary: str = Field(..., description='Summary of aggregation strategy')
+
+
+class SandboxCurationResult(BaseModel):
+    """Output schema for sandbox curation across iterations."""
+    selected_branch_indices: List[int] = Field(
+        default_factory=list,
+        description='Indices of branches whose sandboxes should be merged for next iteration'
+    )
+    merge_reasoning: str = Field(
+        default='',
+        description='Why these branches were selected for merging'
+    )
+    file_selection: dict = Field(
+        default_factory=dict,
+        description='Mapping of file_path -> source_branch_index for conflict resolution'
+    )
+    feedback_for_next_iteration: str = Field(
+        default='',
+        description='Guidance on how to build upon the merged sandbox'
+    )
 
 
 class BranchAnalysis(BaseModel):

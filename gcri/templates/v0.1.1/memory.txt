@@ -6,3 +6,6 @@ STRATEGY GRAVEYARD (never repeat):
 
 LAST ATTEMPT FEEDBACK (fix these):
 {recent}
+
+BASE SANDBOX (pre-existing artifacts you can build upon):
+{base_sandbox_summary}

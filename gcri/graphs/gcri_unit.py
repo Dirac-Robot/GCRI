@@ -15,6 +15,7 @@ from gcri.graphs.schemas import (
     ActiveConstraints,
     RawHypothesis,
     AggregatedBranch,
+    SandboxCurationResult,
     create_decision_schema
 )
 from gcri.graphs.states import (
@@ -565,6 +566,7 @@ class GCRI:
 
         Processes the current iteration's feedback and stores relevant
         learnings in memory for use in subsequent iterations.
+        Also performs sandbox curation for cross-iteration artifact preservation.
 
         Args:
             state: TaskState with decision feedback and current memory.
@@ -578,14 +580,24 @@ class GCRI:
         memory_template_path = self.config.templates.memory
         with open(memory_template_path, 'r') as f:
             memory_template = f.read()
+
+        # Collect sandbox file summary for this iteration
+        branch_files = self.sandbox.get_branch_files(state.count)
+        sandbox_file_summary = {
+            idx: list(files.keys()) for idx, files in branch_files.items()
+        }
+
         iteration_log = IterationLog(
             count_in_memory_log=state.count,
             branch_evaluations=state.branch_evaluations,
-            global_feedback=state.global_feedback or ''
+            global_feedback=state.global_feedback or '',
+            sandbox_file_summary=sandbox_file_summary
         )
         current_memory.history.append(iteration_log)
+
         global_feedback = state.global_feedback
         if global_feedback:
+            # Extract active constraints
             active_memory_template_path = self.config.templates.active_memory
             with open(active_memory_template_path, 'r') as f:
                 active_memory_template = f.read()
@@ -605,6 +617,13 @@ class GCRI:
             current_set = set(current_memory.active_constraints)
             current_set.update(new_constraints)
             current_memory.active_constraints = list(current_set)
+
+        # Perform sandbox curation for next iteration (independent of global_feedback)
+        if branch_files:
+            current_memory = self._curate_sandbox(
+                state, current_memory, branch_files
+            )
+
         integrated_feedback = current_memory.format_for_strategy(memory_template)
         logger.bind(
             ui_event='node_update',
@@ -616,6 +635,85 @@ class GCRI:
             'memory': current_memory,
             'feedback': integrated_feedback
         }
+
+    def _curate_sandbox(self, state: TaskState, memory: StructuredMemory, branch_files: dict) -> StructuredMemory:
+        """
+        Curate sandbox artifacts for next iteration.
+
+        Args:
+            state: Current TaskState with branch evaluations.
+            memory: StructuredMemory to update.
+            branch_files: Dict of branch_index -> {file_path: content}.
+
+        Returns:
+            Updated StructuredMemory with base_sandbox_container_id.
+        """
+        logger.info(f'🔍 Curating sandbox from {len(branch_files)} branches...')
+
+        # Build the curation prompt
+        sandbox_curator_path = self.config.templates.sandbox_curator
+        with open(sandbox_curator_path, 'r') as f:
+            curator_template = f.read()
+
+        # Format branch evaluations
+        branch_eval_str = '\n'.join([
+            f'  - Branch {b.branch_index}: {b.status.value} '
+            f'({b.failure_category.value if b.failure_category else "none"}) - {b.summary_hypothesis}'
+            for b in state.branch_evaluations
+        ])
+
+        # Format branch files summary
+        branch_files_str = '\n'.join([
+            f'  - Branch {idx}: {len(files)} files - {list(files.keys())[:5]}'
+            for idx, files in branch_files.items()
+        ])
+
+        curator_template = curator_template.format(
+            task=state.task,
+            decision=state.decision,
+            global_feedback=state.global_feedback or 'None',
+            branch_evaluations=branch_eval_str,
+            branch_files=branch_files_str
+        )
+        curator_template = f'{self.global_rules}\n\n{curator_template}'
+
+        # Build curator agent with SandboxCurationResult schema
+        memory_config = self.config.agents.memory
+        curator_agent = build_model(
+            memory_config.model_id,
+            memory_config.get('gcri_options'),
+            **memory_config.parameters
+        ).with_structured_output(schema=SandboxCurationResult)
+
+        try:
+            curation_result = curator_agent.invoke(curator_template)
+            logger.info(
+                f'📦 Sandbox curation: selected branches {curation_result.selected_branch_indices}, '
+                f'reasoning: {curation_result.merge_reasoning[:100]}...'
+            )
+
+            if curation_result.selected_branch_indices:
+                # Create base sandbox from selected branches
+                base_container, summary = self.sandbox.create_base_sandbox(
+                    curation_result.selected_branch_indices, state.count
+                )
+                if base_container:
+                    memory.base_sandbox_container_id = base_container
+                    memory.base_sandbox_summary = summary
+                    logger.info(f'✅ Base sandbox created: {base_container[:12]}')
+
+                    # Add curation feedback to memory
+                    if curation_result.feedback_for_next_iteration:
+                        memory.active_constraints.append(
+                            f'[Sandbox] {curation_result.feedback_for_next_iteration}'
+                        )
+            else:
+                logger.info('📭 No branches selected for sandbox curation')
+
+        except Exception as e:
+            logger.warning(f'Sandbox curation failed: {e}. Continuing without base sandbox.')
+
+        return memory
 
     def _restore_from_state(self, task_dict, initial_memory):
         """Restore execution state from a previous run."""

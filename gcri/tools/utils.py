@@ -183,3 +183,100 @@ class SandboxManager:
             self._docker_sandbox.clean_up_all()
         self._branch_containers.clear()
 
+    def get_branch_files(self, iteration_count: int) -> dict:
+        """
+        Get files created/modified by each branch in this iteration.
+
+        Args:
+            iteration_count: Current iteration index.
+
+        Returns:
+            Dict mapping branch_index to dict of {file_path: content}.
+        """
+        branch_files = {}
+        for (iter_idx, branch_idx), container_id in self._branch_containers.items():
+            if iter_idx != iteration_count:
+                continue
+            if isinstance(branch_idx, str) and branch_idx.startswith('v_'):
+                continue
+            files = self.docker_sandbox.get_container_files(container_id)
+            if files:
+                branch_files[branch_idx] = files
+                logger.debug(f'📁 Branch {branch_idx}: {len(files)} files collected')
+        return branch_files
+
+    def create_base_sandbox(self, source_indices: list, iteration_count: int) -> tuple:
+        """
+        Create merged base sandbox from selected branches.
+
+        Args:
+            source_indices: List of branch indices to merge.
+            iteration_count: Current iteration index.
+
+        Returns:
+            Tuple of (container_id, file_summary_string).
+        """
+        if not source_indices:
+            logger.warning('No source indices provided for base sandbox.')
+            return None, ''
+
+        source_containers = []
+        for idx in source_indices:
+            container_id = self._branch_containers.get((iteration_count, idx))
+            if container_id:
+                source_containers.append(container_id)
+
+        if not source_containers:
+            logger.warning('No containers found for specified indices.')
+            return None, ''
+
+        try:
+            if len(source_containers) == 1:
+                # Single source: clone it to preserve for next iteration
+                base_container = self.docker_sandbox.clone_container(
+                    source_containers[0], iteration_count+1, 'base'
+                )
+            else:
+                base_container = self.docker_sandbox.merge_containers(
+                    source_containers, self.project_dir
+                )
+
+            # Collect file summary
+            files = self.docker_sandbox.get_container_files(base_container)
+            file_list = list(files.keys()) if files else []
+            summary = f'{len(file_list)} files from branches {source_indices}'
+            if file_list:
+                summary += f': {", ".join(file_list[:5])}'
+                if len(file_list) > 5:
+                    summary += f' ... and {len(file_list)-5} more'
+
+            logger.info(f'🏗️ Created base sandbox {base_container[:12]} from branches {source_indices}')
+            return base_container, summary
+
+        except Exception as e:
+            logger.error(f'Failed to create base sandbox: {e}')
+            return None, ''
+
+    def setup_branch_from_base(self, iteration_count: int, branch_index: int, base_container_id: str) -> str:
+        """
+        Setup branch by cloning base sandbox instead of project_dir.
+
+        Args:
+            iteration_count: Current iteration index.
+            branch_index: Branch index.
+            base_container_id: Container ID to clone from.
+
+        Returns:
+            New container ID for this branch.
+        """
+        try:
+            container_id = self.docker_sandbox.clone_container(
+                base_container_id, iteration_count, branch_index
+            )
+            self._branch_containers[(iteration_count, branch_index)] = container_id
+            logger.debug(f'🔄 Branch {branch_index} cloned from base sandbox')
+            return container_id
+        except Exception as e:
+            logger.error(f'Failed to setup branch from base: {e}. Falling back to fresh setup.')
+            return self.setup_branch(iteration_count, branch_index)
+

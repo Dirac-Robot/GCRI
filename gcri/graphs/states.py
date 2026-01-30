@@ -13,6 +13,10 @@ class IterationLog(BaseModel):
     count_in_memory_log: int = Field(..., description='Iteration index for this log entry')
     global_feedback: str = Field(default='', description='Strategic direction synthesized from all branch failures')
     branch_evaluations: List[BranchAnalysis] = Field(default_factory=list, description='Detailed evaluation for each branch')
+    sandbox_file_summary: Dict[int, List[str]] = Field(
+        default_factory=dict,
+        description='Mapping of branch_index to list of files created/modified by that branch'
+    )
 
     def get_summary_line(self):
         summaries = []
@@ -37,6 +41,14 @@ class StructuredMemory(BaseModel):
         default_factory=list,
         description='Past iteration logs with failures and learnings'
     )
+    base_sandbox_container_id: Optional[str] = Field(
+        default=None,
+        description='Container ID of merged base sandbox for next iteration'
+    )
+    base_sandbox_summary: str = Field(
+        default='',
+        description='Summary of files available in base sandbox'
+    )
 
     def format_for_strategy(self, template):
         constraints = '\n'.join([f'- {c}' for c in self.active_constraints])
@@ -52,7 +64,13 @@ class StructuredMemory(BaseModel):
                 recent += f'   * Branch {br.branch_index} Error: {br.reasoning}\n'
         else:
             recent = ''
-        return template.format(constraints=constraints, graveyard=graveyard, recent=recent)
+        base_sandbox = self.base_sandbox_summary if self.base_sandbox_summary else 'None (starting fresh)'
+        return template.format(
+            constraints=constraints,
+            graveyard=graveyard,
+            recent=recent,
+            base_sandbox_summary=base_sandbox
+        )
 
 
 class HypothesisResult(BaseModel):

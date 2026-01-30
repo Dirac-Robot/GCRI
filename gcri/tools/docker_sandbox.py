@@ -282,6 +282,115 @@ class DockerSandbox:
         branch_id = f'{iteration}_{branch}'
         return self._containers.get(branch_id)
 
+    def clone_container(self, source_container_id: str, iteration: int, branch: int) -> str:
+        """
+        Create a new branch container by cloning an existing container's filesystem.
+
+        Args:
+            source_container_id: Container ID to clone from.
+            iteration: Iteration index for the new container.
+            branch: Branch index for the new container.
+
+        Returns:
+            New container ID with cloned files.
+        """
+        if not self.docker_available:
+            raise RuntimeError('Docker is not available on this system.')
+
+        branch_id = f'{iteration}_{branch}'
+        container_name = f'gcri_branch_{branch_id}_{uuid.uuid4().hex[:8]}'
+        temp_dir = f'/tmp/gcri_clone_{uuid.uuid4().hex[:8]}'
+
+        try:
+            os.makedirs(temp_dir, exist_ok=True)
+
+            # Copy files from source container
+            subprocess.run(
+                ['docker', 'cp', f'{source_container_id}:/workspace/.', temp_dir],
+                capture_output=True,
+                timeout=60
+            )
+
+            # Create new container
+            create_cmd = [
+                'docker', 'create',
+                '--name', container_name,
+                f'--memory={self.memory_limit}',
+                f'--cpus={self.cpu_limit}',
+                f'--network={self.network_mode}',
+                '-w', '/workspace',
+                '-t',
+                self.image,
+                'tail', '-f', '/dev/null'
+            ]
+            result = subprocess.run(create_cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                raise RuntimeError(f'Failed to create container: {result.stderr}')
+
+            container_id = result.stdout.strip()
+            subprocess.run(['docker', 'start', container_id], capture_output=True, timeout=10)
+
+            # Copy cloned files
+            subprocess.run(
+                ['docker', 'cp', f'{temp_dir}/.', f'{container_id}:/workspace'],
+                capture_output=True,
+                timeout=60
+            )
+
+            # Create baseline marker
+            self._execute_in_container(container_id, ['touch', '/workspace/.gcri_baseline'])
+
+            self._containers[branch_id] = container_id
+            logger.debug(f'🔄 Cloned container {source_container_id[:12]} -> {container_id[:12]} for branch {branch_id}')
+            return container_id
+
+        except Exception as e:
+            logger.error(f'Failed to clone container: {e}')
+            raise
+        finally:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+
+    def get_container_files(self, container_id: str) -> dict:
+        """
+        Get files that were created/modified by LLM in the container.
+
+        Uses .gcri_baseline marker file to identify only files newer than baseline.
+
+        Args:
+            container_id: Container ID to inspect.
+
+        Returns:
+            Dict mapping file paths to their contents.
+        """
+        try:
+            # Find files newer than baseline
+            result = self._execute_in_container(
+                container_id,
+                ['find', '/workspace', '-newer', '/workspace/.gcri_baseline',
+                 '-type', 'f', '!', '-name', '.gcri_baseline', '!', '-path', '*/__pycache__/*']
+            )
+            if result.startswith('Error'):
+                logger.warning(f'Failed to find modified files: {result}')
+                return {}
+
+            files = {}
+            for line in result.strip().split('\n'):
+                line = line.strip()
+                if not line or line == '(Success, no output)':
+                    continue
+                # Get file content
+                content = self._execute_in_container(container_id, ['cat', line])
+                if not content.startswith('Error'):
+                    # Convert to relative path
+                    rel_path = line.replace('/workspace/', '', 1)
+                    files[rel_path] = content
+            return files
+
+        except Exception as e:
+            logger.warning(f'Failed to get container files: {e}')
+            return {}
+
 
 _sandbox_instance = None
 
