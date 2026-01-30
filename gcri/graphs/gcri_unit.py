@@ -1,4 +1,5 @@
 import json
+import time
 
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
@@ -134,7 +135,11 @@ class GCRI:
         )
         graph.add_edge('verification_executor', 'collect_verification')
         graph.add_edge('collect_verification', 'decision')
-        graph.add_edge('decision', 'update_memory')
+        graph.add_conditional_edges(
+            'decision',
+            self._should_update_memory,
+            {'update_memory': 'update_memory', END: END}
+        )
         graph.add_edge('update_memory', END)
 
         self._graph = graph
@@ -560,6 +565,13 @@ class GCRI:
             'branch_evaluations': getattr(decision, 'branch_evaluations', [])
         }
 
+    def _should_update_memory(self, state: TaskState) -> str:
+        """Route to update_memory only if decision is False (continuing to next iteration)."""
+        if state.decision:
+            logger.debug('Decision=True, skipping memory update (no next iteration)')
+            return END
+        return 'update_memory'
+
     def update_memory(self, state: TaskState):
         """
         Update structured memory based on iteration results.
@@ -760,6 +772,7 @@ class GCRI:
 
     def __call__(self, task, initial_memory=None, commit_mode='manual'):
         """Execute the GCRI reasoning loop for a given task."""
+        start_time = time.time()
         valid_modes = {'manual', 'auto-accept'}
         if commit_mode not in valid_modes:
             raise ValueError(
@@ -814,5 +827,7 @@ class GCRI:
                 result = {'final_output': 'Task aborted by user before first iteration completion.'}
         finally:
             self.sandbox.clean_up()
-            logger.info('🧹 Sandbox clean-up completed.')
+            elapsed = time.time() - start_time
+            logger.info(f'🧹 Sandbox clean-up completed.')
+            logger.info(f'⏱️ Total elapsed time: {elapsed:.2f}s ({elapsed/60:.1f}min)')
         return result
