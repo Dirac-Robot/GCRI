@@ -151,8 +151,10 @@ def default(config):
             active_memory=get_template_path('active_memory.txt', config.template_version),
             sandbox_curator=get_template_path('sandbox_curator.txt', config.template_version),
             global_rules=get_template_path('global_rules.txt', config.template_version),
-            aggregator=get_template_path('aggregator.txt', config.template_version)
+            aggregator=get_template_path('aggregator.txt', config.template_version),
+            external_memory_update=get_template_path('external_memory_update.txt', config.template_version)
         )
+
 
 
 @scope.observe(default=True, lazy=True)

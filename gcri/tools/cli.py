@@ -222,7 +222,77 @@ def modify_memory(old_rule: str, new_rule: str, domain: str = None) -> str:
     return f'Rule not found in external memory (domain: {domain or "global"})'
 
 
-MEMORY_TOOLS = [query_memory, save_to_memory, modify_memory]
+@tool
+def save_knowledge(
+    domain: str,
+    knowledge_type: str,
+    title: str,
+    content: str,
+    code: str = None,
+    tags: str = None
+) -> str:
+    """
+    Save structured knowledge to external memory for future tasks.
+    Use this when you discover a useful pattern, concept, or algorithm.
+
+    Args:
+        domain: Domain to categorize (e.g., 'dp_algorithms', 'coding')
+        knowledge_type: Type of knowledge ('pattern', 'concept', 'algorithm')
+        title: Short, descriptive title
+        content: Detailed explanation or description
+        code: Optional code example (as string)
+        tags: Optional comma-separated tags for search (e.g., 'binary_search,dp')
+
+    Returns:
+        Confirmation message.
+    """
+    memory = _external_memory_var.get()
+    if memory is None:
+        return 'External memory not available.'
+    tag_list = [t.strip() for t in tags.split(',')] if tags else None
+    memory.save_knowledge(
+        domain=domain,
+        knowledge_type=knowledge_type,
+        title=title,
+        content=content,
+        code=code,
+        tags=tag_list
+    )
+    return f'Knowledge saved: "{title}" in domain "{domain}"'
+
+
+@tool
+def query_knowledge(domain: str = None, tags: str = None) -> str:
+    """
+    Query stored knowledge from external memory.
+    Use this to retrieve patterns, concepts, or algorithms from past tasks.
+
+    Args:
+        domain: Optional domain filter (e.g., 'dp_algorithms')
+        tags: Optional comma-separated tags to filter (e.g., 'binary_search,dp')
+
+    Returns:
+        Formatted knowledge entries or message if none found.
+    """
+    memory = _external_memory_var.get()
+    if memory is None:
+        return 'External memory not available.'
+    tag_list = [t.strip() for t in tags.split(',')] if tags else None
+    entries = memory.load_knowledge(domain=domain, tags=tag_list)
+    if not entries:
+        return f'No knowledge found for domain: {domain or "all"}, tags: {tags or "none"}'
+    result_lines = ['Stored Knowledge:']
+    for entry in entries:
+        result_lines.append(f'\n### [{entry["type"]}] {entry["title"]} (domain: {entry["domain"]})')
+        result_lines.append(entry['content'])
+        if entry.get('code'):
+            result_lines.append(f'```\n{entry["code"]}\n```')
+        if entry.get('tags'):
+            result_lines.append(f'Tags: {", ".join(entry["tags"])}')
+    return '\n'.join(result_lines)
+
+
+MEMORY_TOOLS = [query_memory, save_to_memory, modify_memory, save_knowledge, query_knowledge]
 
 
 class BranchContainerRegistry:

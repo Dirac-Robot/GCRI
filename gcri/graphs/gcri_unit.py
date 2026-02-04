@@ -767,6 +767,11 @@ class GCRI:
         winning_branch_path = self.sandbox.get_winning_branch_path(index, best_branch_index)
         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
         logger.info(f'📂 Location: {winning_branch_path}')
+
+        # Update external memory on success (before commit)
+        if self._external_memory:
+            self._update_external_memory_on_success(result)
+
         commit_context = {
             'winning_branch_path': winning_branch_path,
             'best_branch_index': best_branch_index,
@@ -781,6 +786,26 @@ class GCRI:
         else:
             logger.info('Changes discarded.')
         return True
+
+    def _update_external_memory_on_success(self, result):
+        """Update external memory on successful task completion (decision=True)."""
+        try:
+            ext_memory_template_path = self.config.templates.get('external_memory_update')
+            if not ext_memory_template_path:
+                logger.debug('external_memory_update template not configured, skipping')
+                return
+            with open(ext_memory_template_path, 'r') as f:
+                ext_memory_template = f.read()
+            result_summary = result.get('final_output', str(result))
+            prompt = ext_memory_template.format(result_summary=result_summary)
+            prompt = f'{self.global_rules}\n\n{prompt}'
+            # Use memory agent to potentially save learnings
+            memory_agent = self.memory_agent
+            memory_agent.invoke(prompt)
+            logger.info('External memory update completed on success')
+        except Exception as e:
+            logger.warning(f'External memory update on success failed: {e}')
+
 
     def __call__(self, task, initial_memory=None, commit_mode='manual'):
         """Execute the GCRI reasoning loop for a given task."""
