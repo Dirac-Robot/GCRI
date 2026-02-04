@@ -229,7 +229,8 @@ def save_knowledge(
     title: str,
     content: str,
     code: str = None,
-    tags: str = None
+    tags: str = None,
+    source_date: str = None
 ) -> str:
     """
     Save structured knowledge to external memory for future tasks.
@@ -242,6 +243,7 @@ def save_knowledge(
         content: Detailed explanation or description
         code: Optional code example (as string)
         tags: Optional comma-separated tags for search (e.g., 'binary_search,dp')
+        source_date: Optional source document date (for web search results, e.g., '2024-01-15')
 
     Returns:
         Confirmation message.
@@ -256,9 +258,11 @@ def save_knowledge(
         title=title,
         content=content,
         code=code,
-        tags=tag_list
+        tags=tag_list,
+        source_date=source_date
     )
     return f'Knowledge saved: "{title}" in domain "{domain}"'
+
 
 
 @tool

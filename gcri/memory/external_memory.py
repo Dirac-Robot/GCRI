@@ -89,7 +89,8 @@ class ExternalMemory:
         title: str,
         content: str,
         code: Optional[str] = None,
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        source_date: Optional[str] = None
     ):
         """
         Save structured knowledge to external memory.
@@ -101,12 +102,17 @@ class ExternalMemory:
             content: Description/explanation
             code: Optional code example
             tags: Optional tags for search
+            source_date: Optional source document date (for web search results)
         """
+        from datetime import datetime
         entry = {
             'type': knowledge_type,
             'title': title,
             'content': content,
+            'created_at': datetime.now().isoformat(),
         }
+        if source_date:
+            entry['source_date'] = source_date
         if code:
             entry['code'] = code
         if tags:
