@@ -33,4 +33,6 @@ CRITICAL RULES:
    - Never mention: task, strategy, hint, feedback, hypothesis, agent, loop
    - Never inline full code in output
 
+8. MEMORY: If uncertain about domain patterns, use query_memory tool to check past learnings.
+
 OUTPUT: hypothesis = "<complete solution>"

@@ -37,4 +37,6 @@ INSTRUCTIONS:
 
 7. EFFICIENCY: Simple tasks → 1 strategy. Complex → up to {num_hypothesis}.
 
+8. MEMORY: If query_memory tool is available, retrieve past learnings to avoid known pitfalls.
+
 OUTPUT: Follow JSON schema exactly.

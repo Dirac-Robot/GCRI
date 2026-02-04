@@ -27,7 +27,7 @@ from gcri.graphs.states import (
 from gcri.graphs.callbacks import AutoCallbacks
 from gcri.graphs.aggregator import HypothesisAggregator
 from gcri.graphs.generators import get_branches_generator
-from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry, set_global_variables
+from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry, set_global_variables, set_external_memory
 from gcri.tools.utils import SandboxManager
 from gcri.memory.external_memory import ExternalMemory
 
@@ -88,6 +88,7 @@ class GCRI:
             if not ext_path:
                 ext_path = os.path.join(config.run_dir, 'external_memory.json')
             self._external_memory = ExternalMemory(ext_path)
+            set_external_memory(self._external_memory)
             logger.info(f'🧠 External memory enabled: {ext_path}')
 
         # Build main graph

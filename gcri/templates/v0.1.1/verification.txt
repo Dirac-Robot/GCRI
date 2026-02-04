@@ -50,4 +50,6 @@ PROHIBITIONS:
 - Never redesign from scratch unless unsalvageable
 - Never mention loops or agent names
 
+MEMORY: If you discover a reusable rule or pitfall, use save_to_memory tool.
+
 OUTPUT: hypothesis, counter_example, counter_strength, adjustment, reasoning
