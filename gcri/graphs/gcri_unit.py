@@ -1,4 +1,5 @@
 import json
+import os
 import time
 
 from langgraph.constants import START, END
@@ -28,6 +29,7 @@ from gcri.graphs.aggregator import HypothesisAggregator
 from gcri.graphs.generators import get_branches_generator
 from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry, set_global_variables
 from gcri.tools.utils import SandboxManager
+from gcri.memory.external_memory import ExternalMemory
 
 
 class TaskAbortedError(Exception):
@@ -78,6 +80,15 @@ class GCRI:
             generator_type, config, self.sandbox, abort_event, self.global_rules
         )
         logger.info(f'🔧 BranchesGenerator type: {generator_type} ({type(self._branches_generator).__name__})')
+
+        # Initialize external memory if enabled
+        self._external_memory = None
+        if getattr(config, 'external_memory', {}).get('enabled', False):
+            ext_path = config.external_memory.get('path')
+            if not ext_path:
+                ext_path = os.path.join(config.run_dir, 'external_memory.json')
+            self._external_memory = ExternalMemory(ext_path)
+            logger.info(f'🧠 External memory enabled: {ext_path}')
 
         # Build main graph
         graph = StateGraph(TaskState)
@@ -786,6 +797,12 @@ class GCRI:
             memory = initial_memory if initial_memory is not None else StructuredMemory()
             feedback = ''
             start_index = 0
+            # Load external memory rules if available
+            if self._external_memory:
+                ext_rules = self._external_memory.load(domain=getattr(self.config, 'task_domain', None))
+                if ext_rules:
+                    memory.active_constraints.extend(ext_rules)
+                    logger.info(f'🧠 Loaded {len(ext_rules)} rules from external memory')
         try:
             for index in range(start_index, self.config.protocols.max_iterations):
                 logger.info('=' * 60)
@@ -803,6 +820,12 @@ class GCRI:
                     self.sandbox.save_iteration_log(index, result)
                     if result['decision']:
                         self._handle_iteration_success(result, index, commit_mode)
+                        # Save useful constraints to external memory on success
+                        if self._external_memory and memory.active_constraints:
+                            self._external_memory.save(
+                                memory.active_constraints,
+                                domain=getattr(self.config, 'task_domain', None)
+                            )
                         break
                     else:
                         memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])

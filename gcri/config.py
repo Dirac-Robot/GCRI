@@ -110,6 +110,10 @@ def default(config):
         cpu_limit=1.0,
         network_mode='none'
     )
+    config.external_memory = dict(
+        enabled=True,
+        path=None  # Will be set lazily based on run_dir
+    )
     config.num_branches = 2
     config.branches_generator_type = 'default'  # 'default', 'deep', 'shallow'
     config.aggregation = dict(
