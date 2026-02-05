@@ -230,7 +230,9 @@ def save_knowledge(
     content: str,
     code: str = None,
     tags: str = None,
-    source_date: str = None
+    source_date: str = None,
+    source_url: str = None,
+    source_reliability: str = None
 ) -> str:
     """
     Save structured knowledge to external memory for future tasks.
@@ -244,6 +246,8 @@ def save_knowledge(
         code: Optional code example (as string)
         tags: Optional comma-separated tags for search (e.g., 'binary_search,dp')
         source_date: Optional source document date (for web search results, e.g., '2024-01-15')
+        source_url: Optional source URL (for web search results, e.g., 'https://arxiv.org/abs/...')
+        source_reliability: Optional source reliability ('high'=arXiv/Nature/ACL, 'medium'=blog, 'low'=general)
 
     Returns:
         Confirmation message.
@@ -259,7 +263,9 @@ def save_knowledge(
         content=content,
         code=code,
         tags=tag_list,
-        source_date=source_date
+        source_date=source_date,
+        source_url=source_url,
+        source_reliability=source_reliability
     )
     return f'Knowledge saved: "{title}" in domain "{domain}"'
 

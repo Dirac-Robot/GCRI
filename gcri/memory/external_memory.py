@@ -90,7 +90,9 @@ class ExternalMemory:
         content: str,
         code: Optional[str] = None,
         tags: Optional[List[str]] = None,
-        source_date: Optional[str] = None
+        source_date: Optional[str] = None,
+        source_url: Optional[str] = None,
+        source_reliability: Optional[str] = None
     ):
         """
         Save structured knowledge to external memory.
@@ -103,6 +105,8 @@ class ExternalMemory:
             code: Optional code example
             tags: Optional tags for search
             source_date: Optional source document date (for web search results)
+            source_url: Optional source URL (for web search results)
+            source_reliability: Optional reliability ('high'=arXiv/Nature/ACL, 'medium'=blog, 'low'=general)
         """
         from datetime import datetime
         entry = {
@@ -113,6 +117,10 @@ class ExternalMemory:
         }
         if source_date:
             entry['source_date'] = source_date
+        if source_url:
+            entry['source_url'] = source_url
+        if source_reliability:
+            entry['source_reliability'] = source_reliability
         if code:
             entry['code'] = code
         if tags:
