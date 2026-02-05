@@ -367,6 +367,25 @@ After writing all merged files, respond with a summary of what was merged.
         template = self._build_template_with_files(raw_hypotheses, state.task, branch_files)
         result = self.agent.invoke(template)
 
+        # Handle None result - fallback to first branch passthrough
+        if result is None:
+            logger.warning('Aggregation LLM returned None, falling back to first branch passthrough')
+            hyp = raw_hypotheses[0]
+            container_id = branch_containers.get(hyp.index, '')
+            return AggregationResult(
+                branches=[
+                    AggregatedBranch(
+                        index=0,
+                        combined_hypothesis=hyp.hypothesis,
+                        source_indices=[hyp.index],
+                        merge_reasoning='Aggregation fallback: LLM returned None',
+                        container_id=container_id
+                    )
+                ],
+                discarded_indices=[i for i in range(1, len(raw_hypotheses))],
+                aggregation_summary='Fallback: first hypothesis passed through due to aggregation failure.'
+            )
+
         # Log aggregation results
         logger.info(f'📊 Aggregation complete: {len(result.branches)} branches output')
         for branch in result.branches:
