@@ -423,10 +423,10 @@ def ingest_to_memory(content: str, source: str = '') -> str:
 
 @tool
 def retrieve_from_memory(query: str) -> str:
-    """Search in-session memory and return compressed summaries.
-    ALWAYS use this FIRST to scan relevant memories before reading raw content.
-    Returns lightweight metadata (summary, trigger, node_id) for each match.
-    Only use read_raw_memory if the summary is insufficient for your task.
+    """Search in-session memory and return compressed summaries (Tier 1).
+    ALWAYS use this FIRST. Returns lightweight metadata per match.
+    If a summary is too short, use read_detailed_summary for more detail.
+    Only use read_raw_memory as a last resort for exact quotes or full data.
 
     Args:
         query: What information you need to recall.
@@ -450,10 +450,32 @@ def retrieve_from_memory(query: str) -> str:
 
 
 @tool
+def read_detailed_summary(node_id: str) -> str:
+    """Read a detailed summary of a memory node (Tier 2).
+    Use when short summary from retrieve_from_memory is insufficient but you
+    don't need the full raw content. Generated on first request, then cached.
+    Cheaper and faster than read_raw_memory.
+
+    Args:
+        node_id: Memory node ID (starts with 'mem_') from prior retrieval.
+
+    Returns:
+        Detailed summary (3-8 sentences with key facts and specifics).
+    """
+    comet = _comet_instance
+    if comet is None:
+        return 'Error: In-session memory (CoMeT) not available.'
+    detailed = comet.get_detailed_summary(node_id)
+    if detailed is None:
+        return f'No node found for {node_id}.'
+    return detailed
+
+
+@tool
 def read_raw_memory(node_id: str) -> str:
-    """Read the FULL original content of a memory node. EXPENSIVE - use sparingly.
-    Only call this when retrieve_from_memory summaries are NOT enough to
-    complete your task (e.g., you need exact quotes, code, or detailed data).
+    """Read the FULL original content of a memory node (Tier 3). EXPENSIVE.
+    Only use when you need exact quotes, code, or complete data that
+    even the detailed summary cannot provide.
     Get node_ids from retrieve_from_memory results first.
 
     Args:
@@ -471,7 +493,7 @@ def read_raw_memory(node_id: str) -> str:
     return raw
 
 
-COMET_TOOLS = [retrieve_from_memory, read_raw_memory]
+COMET_TOOLS = [retrieve_from_memory, read_detailed_summary, read_raw_memory]
 
 class BranchContainerRegistry:
     """Registry for branch container IDs."""
