@@ -772,7 +772,7 @@ class RecursiveToolAgent(Runnable):
                         output_str = str(output)
                         # Auto-ingest long tool outputs into CoMeT
                         comet = _comet_instance
-                        if comet and len(output_str) > 2000 and name not in ('retrieve_from_memory',):
+                        if comet and len(output_str) > 1000 and name not in ('retrieve_from_memory',):
                             try:
                                 source = f'tool:{name}'
                                 nodes = comet.add_document(output_str, source=source)

@@ -171,29 +171,28 @@ class GCRI:
         from gcri.tools.cli import set_comet_instance
         try:
             from comet.orchestrator import CoMeT
-            from ato.adict import ADict
 
             comet_dir = tempfile.mkdtemp(prefix='gcri_comet_')
-            comet_config = ADict(
-                slm_model=config.get('comet_slm_model', 'gpt-4o-mini'),
-                main_model=config.get('comet_main_model', 'gpt-4o'),
-                compacting=ADict(load_threshold=4, max_l1_buffer=10),
-                storage=ADict(
-                    type='json',
-                    base_path=os.path.join(comet_dir, 'store'),
-                    raw_path=os.path.join(comet_dir, 'store', 'raw'),
-                ),
-                retrieval=ADict(
-                    embedding_model='text-embedding-3-small',
-                    vector_backend='chroma',
-                    vector_db_path=os.path.join(comet_dir, 'vectors'),
-                    fusion_alpha=0.5,
-                    rrf_k=5,
-                    raw_search_weight=0.2,
-                    top_k=5,
-                    rerank=False,
-                ),
-            )
+            comet_config = {
+                'slm_model': 'gpt-4o-mini',
+                'main_model': 'gpt-4o',
+                'compacting': {'load_threshold': 4, 'max_l1_buffer': 10},
+                'storage': {
+                    'type': 'json',
+                    'base_path': os.path.join(comet_dir, 'store'),
+                    'raw_path': os.path.join(comet_dir, 'store', 'raw'),
+                },
+                'retrieval': {
+                    'embedding_model': 'text-embedding-3-small',
+                    'vector_backend': 'chroma',
+                    'vector_db_path': os.path.join(comet_dir, 'vectors'),
+                    'fusion_alpha': 0.5,
+                    'rrf_k': 5,
+                    'raw_search_weight': 0.2,
+                    'top_k': 5,
+                    'rerank': False,
+                },
+            }
             self._comet = CoMeT(comet_config)
             set_comet_instance(self._comet)
             logger.info(f'☄️ CoMeT in-session memory enabled: {comet_dir}')
