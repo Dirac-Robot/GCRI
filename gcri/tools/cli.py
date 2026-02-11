@@ -385,12 +385,14 @@ MEMORY_TOOLS = [query_memory, save_to_memory, modify_memory, save_knowledge, que
 
 # CoMeT in-session memory (shared across all branches/threads)
 _comet_instance = None
+_comet_ingest_count = 0
 
 
 def set_comet_instance(comet):
     """Set the shared CoMeT instance for in-session memory tools."""
-    global _comet_instance
+    global _comet_instance, _comet_ingest_count
     _comet_instance = comet
+    _comet_ingest_count = 0
 
 
 def get_comet_instance():
@@ -818,18 +820,19 @@ class RecursiveToolAgent(Runnable):
                         # Auto-ingest long tool outputs into CoMeT
                         comet = _comet_instance
                         if comet and len(output_str) > 1500 and name not in ('retrieve_from_memory', 'read_raw_memory', 'read_detailed_summary'):
+                            global _comet_ingest_count
                             try:
                                 source = f'tool:{name}'
                                 nodes = comet.add_document(output_str, source=source)
                                 if nodes:
-                                    preview = output_str[:1500]
-                                    node_ids = ', '.join(n.node_id for n in nodes[:3])
-                                    output_str = (
-                                        f'{preview}\n\n'
-                                        f'[... truncated. Full content stored in {len(nodes)} memory node(s): {node_ids}. '
-                                        f'Use read_detailed_summary(node_id) or read_raw_memory(node_id) for more.]'
-                                    )
-                                    logger.info(f'☄️ Auto-ingested {name} output ({len(str(output))} chars) -> {len(nodes)} nodes')
+                                    _comet_ingest_count += 1
+                                    logger.info(f'☄️ Auto-ingested {name} output ({len(output_str)} chars) -> {len(nodes)} nodes (count={_comet_ingest_count})')
+                                    if _comet_ingest_count > 2:
+                                        node_ids = ', '.join(n.node_id for n in nodes[:3])
+                                        output_str = (
+                                            f'[Content stored in {len(nodes)} memory node(s): {node_ids}]\n'
+                                            f'Use read_detailed_summary(node_id) or read_raw_memory(node_id) to access.'
+                                        )
                             except Exception as e:
                                 logger.warning(f'⚠️ CoMeT auto-ingest failed for {name}: {e}')
                         outputs.append(ToolMessage(content=output_str, tool_call_id=call_id, name=name))
