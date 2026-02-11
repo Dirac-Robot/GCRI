@@ -423,9 +423,10 @@ def ingest_to_memory(content: str, source: str = '') -> str:
 
 @tool
 def retrieve_from_memory(query: str) -> str:
-    """Retrieve relevant information from compressed in-session memory.
-    Use this to recall previously ingested content (web pages, files, etc.)
-    without needing the full text in context.
+    """Search in-session memory and return compressed summaries.
+    ALWAYS use this FIRST to scan relevant memories before reading raw content.
+    Returns lightweight metadata (summary, trigger, node_id) for each match.
+    Only use read_raw_memory if the summary is insufficient for your task.
 
     Args:
         query: What information you need to recall.
@@ -450,11 +451,13 @@ def retrieve_from_memory(query: str) -> str:
 
 @tool
 def read_raw_memory(node_id: str) -> str:
-    """Read the full original content stored in a memory node.
-    Use node_ids from retrieve_from_memory results to read full text.
+    """Read the FULL original content of a memory node. EXPENSIVE - use sparingly.
+    Only call this when retrieve_from_memory summaries are NOT enough to
+    complete your task (e.g., you need exact quotes, code, or detailed data).
+    Get node_ids from retrieve_from_memory results first.
 
     Args:
-        node_id: Memory node ID (starts with 'mem_').
+        node_id: Memory node ID (starts with 'mem_') from prior retrieval.
 
     Returns:
         Full original content, or error message if not found.
