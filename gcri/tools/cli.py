@@ -121,6 +121,68 @@ def write_file(file_path: str, content: str) -> str:
 
 
 @tool
+def list_directory(path: str = '.') -> str:
+    """Lists files and directories at the given path in the sandbox.
+    Returns type, size, and name for each entry.
+
+    Args:
+        path: Directory path to list. Defaults to project root.
+    """
+    container_id = get_container_id()
+    if not container_id:
+        return 'Error: No sandbox container available.'
+    sandbox = get_cached_sandbox()
+    container_path = _to_container_path(path)
+    result = sandbox._execute_in_container(
+        container_id, ['ls', '-la', '--group-directories-first', container_path]
+    )
+    return result
+
+
+@tool
+def search_files(pattern: str, path: str = '.') -> str:
+    """Searches for files matching a glob pattern in the sandbox.
+    Returns matching file paths (max 50 results).
+
+    Args:
+        pattern: Glob pattern to match (e.g. '*.py', 'test_*').
+        path: Directory to search in. Defaults to project root.
+    """
+    container_id = get_container_id()
+    if not container_id:
+        return 'Error: No sandbox container available.'
+    sandbox = get_cached_sandbox()
+    container_path = _to_container_path(path)
+    cmd = f"find {container_path} -name '{pattern}' -type f 2>/dev/null | head -50"
+    result = sandbox._execute_in_container(container_id, ['sh', '-c', cmd])
+    if not result.strip():
+        return f'No files matching "{pattern}" found in {path}.'
+    return result
+
+
+@tool
+def grep_in_files(pattern: str, path: str = '.', include: str = '*') -> str:
+    """Searches for a text pattern inside files in the sandbox.
+    Returns matching lines with file path and line number (max 50 results).
+
+    Args:
+        pattern: Text or regex pattern to search for.
+        path: Directory to search in. Defaults to project root.
+        include: File glob filter (e.g. '*.py'). Defaults to all files.
+    """
+    container_id = get_container_id()
+    if not container_id:
+        return 'Error: No sandbox container available.'
+    sandbox = get_cached_sandbox()
+    container_path = _to_container_path(path)
+    cmd = f"grep -rn --include='{include}' '{pattern}' {container_path} 2>/dev/null | head -50"
+    result = sandbox._execute_in_container(container_id, ['sh', '-c', cmd])
+    if not result.strip():
+        return f'No matches for "{pattern}" found in {path}.'
+    return result
+
+
+@tool
 def local_python_interpreter(code: str) -> str:
     """Executes Python code in the sandbox."""
     container_id = get_container_id()
@@ -388,7 +450,7 @@ def run_branch_command(branch_index: int, command: str) -> str:
     return sandbox.execute_command(container_id, command)
 
 
-CLI_TOOLS = [execute_shell_command, read_file, write_file, local_python_interpreter]
+CLI_TOOLS = [execute_shell_command, read_file, write_file, list_directory, search_files, grep_in_files, local_python_interpreter]
 DECISION_TOOLS = [read_branch_file, list_branch_files, run_branch_command]
 
 
