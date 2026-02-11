@@ -672,6 +672,10 @@ class GCRI:
             try:
                 active_memory_template = active_memory_template.format(global_feedback=global_feedback)
                 active_memory_template = f'{self.global_rules}\n\n{active_memory_template}'
+                if self._comet:
+                    comet_ctx = self._comet.get_context_window()
+                    if comet_ctx.strip():
+                        active_memory_template += f'\n\n## In-Session Memory (CoMeT)\n{comet_ctx}'
                 memory_agent = self.memory_agent
                 active_memory = memory_agent.invoke(active_memory_template)
                 new_constraints = active_memory.new_active_constraints
@@ -851,7 +855,10 @@ class GCRI:
             result_summary = result.get('final_output', str(result))
             prompt = ext_memory_template.format(result_summary=result_summary)
             prompt = f'{self.global_rules}\n\n{prompt}'
-            # Use memory agent to potentially save learnings
+            if self._comet:
+                comet_ctx = self._comet.get_context_window()
+                if comet_ctx.strip():
+                    prompt += f'\n\n## In-Session Memory (CoMeT)\n{comet_ctx}'
             memory_agent = self.memory_agent
             memory_agent.invoke(prompt)
             logger.info('External memory update completed on success')
