@@ -11,14 +11,12 @@ abort_event, and global_rules directly.
 from typing import Protocol, TYPE_CHECKING
 from threading import Event
 
-from langgraph.constants import START, END
-from langgraph.graph import StateGraph
 from langgraph.types import Send
 from loguru import logger
 from pydantic import BaseModel, Field
 
 from gcri.graphs.schemas import Hypothesis, Reasoning, RawHypothesis, Strategies, Strategy
-from gcri.graphs.states import TaskState, BranchState
+from gcri.graphs.states import TaskState
 from gcri.tools.cli import build_model
 
 
@@ -135,174 +133,134 @@ class BaseBranchesGenerator:
 
 class DefaultBranchesGenerator(BaseBranchesGenerator):
 
-    def __init__(self, config, sandbox, abort_event=None, global_rules=''):
-        super().__init__(config, sandbox, abort_event, global_rules)
-        self._build_workflow()
-
-    def _build_workflow(self):
-        """Build the internal subgraph for hypothesis generation."""
-        branch = StateGraph(BranchState)
-        branch.add_node('sample_hypothesis', self._sample_hypothesis)
-        branch.add_node('reasoning_and_refine', self._reasoning_and_refine)
-        branch.add_edge(START, 'sample_hypothesis')
-        branch.add_edge('sample_hypothesis', 'reasoning_and_refine')
-        branch.add_edge('reasoning_and_refine', END)
-        self._branch_workflow = branch.compile()
-
-    def _sample_hypothesis(self, state: BranchState):
-        """Generate initial hypothesis for a branch."""
+    def _generate_branch(self, index, task, strategy, intent_analysis, strictness, feedback, count, base_container_id=None):
+        """Generate hypothesis with reasoning refinement for a single branch."""
         self._check_abort()
+
+        if base_container_id:
+            container_id = self.sandbox.setup_branch_from_base(count, index, base_container_id)
+        else:
+            container_id = self.sandbox.setup_branch(count, index)
+
+        # Step 1: Hypothesis
         logger.bind(
             ui_event='node_update',
             node='hypothesis',
-            branch=state.index,
+            branch=index,
             data={'type': 'processing'}
-        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Sampling hypothesis...')
+        ).info(f'Iter #{count+1} | Branch[{index}] Sampling hypothesis...')
 
-        hypothesis_config = self.config.agents.branches[state.index].hypothesis
-        agent = build_model(
+        hypothesis_config = self.config.agents.branches[index].hypothesis
+        hypothesis_agent = build_model(
             hypothesis_config.model_id,
             hypothesis_config.get('gcri_options'),
-            container_id=state.container_id,
+            container_id=container_id,
             **hypothesis_config.parameters
         ).with_structured_output(schema=Hypothesis)
 
-        template = self._load_template_with_rules(
+        hypothesis_template = self._load_template_with_rules(
             self.config.templates.hypothesis,
-            task=state.task_in_branch,
-            strictness=state.strictness,
-            strategy=state.strategy,
-            intent_analysis=state.intent_analysis_in_branch
+            task=task,
+            strictness=strictness,
+            strategy=strategy,
+            intent_analysis=intent_analysis
         )
         hypothesis = self._invoke_with_retry(
-            agent, template, f'Hypothesis agent at strategy #{state.index+1}'
+            hypothesis_agent, hypothesis_template, f'Hypothesis agent at strategy #{index+1}'
         )
 
         logger.bind(
             ui_event='node_update',
             node='hypothesis',
-            branch=state.index,
-            data={'hypothesis': hypothesis.hypothesis, 'container_id': state.container_id}
-        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
+            branch=index,
+            data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
+        ).info(f'Iter #{count+1} | Branch[{index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
 
-        return {'hypothesis': hypothesis.hypothesis}
-
-    def _reasoning_and_refine(self, state: BranchState):
-        """Apply reasoning to refine the hypothesis."""
+        # Step 2: Reasoning & Refine
         self._check_abort()
         logger.bind(
             ui_event='node_update',
             node='reasoning',
-            branch=state.index,
+            branch=index,
             data={'type': 'processing'}
-        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Reasoning...')
+        ).info(f'Iter #{count+1} | Branch[{index}] Reasoning...')
 
-        reasoning_config = self.config.agents.branches[state.index].reasoning
-        agent = build_model(
+        reasoning_config = self.config.agents.branches[index].reasoning
+        reasoning_agent = build_model(
             reasoning_config.model_id,
             reasoning_config.get('gcri_options'),
-            container_id=state.container_id,
+            container_id=container_id,
             **reasoning_config.parameters
         ).with_structured_output(schema=Reasoning)
 
-        template = self._load_template_with_rules(
+        reasoning_template = self._load_template_with_rules(
             self.config.templates.reasoning,
-            task=state.task_in_branch,
-            strategy=state.strategy,
-            hypothesis=state.hypothesis,
-            intent_analysis=state.intent_analysis_in_branch
+            task=task,
+            strategy=strategy,
+            hypothesis=hypothesis.hypothesis,
+            intent_analysis=intent_analysis
         )
         reasoning = self._invoke_with_retry(
-            agent, template, f'Reasoning agent at hypothesis #{state.index+1}'
+            reasoning_agent, reasoning_template, f'Reasoning agent at hypothesis #{index+1}'
         )
 
-        # Build RawHypothesis output
         raw_hyp = RawHypothesis(
-            index=state.index,
-            strategy_name=state.strategy.name,
-            strategy_description=state.strategy.description,
+            index=index,
+            strategy_name=strategy.name,
+            strategy_description=strategy.description,
             hypothesis=reasoning.refined_hypothesis,
             reasoning=reasoning.reasoning,
-            container_id=state.container_id
+            container_id=container_id
         )
 
         logger.bind(
             ui_event='node_update',
             node='reasoning',
-            branch=state.index,
+            branch=index,
             data={
                 'reasoning': reasoning.reasoning,
                 'hypothesis': reasoning.refined_hypothesis,
-                'container_id': state.container_id
+                'container_id': container_id
             }
-        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Refined: {reasoning.refined_hypothesis[:80]}...')
+        ).info(f'Iter #{count+1} | Branch[{index}] Refined: {reasoning.refined_hypothesis[:80]}...')
 
-        return {
-            'reasoning': reasoning.reasoning,
-            'hypothesis': reasoning.refined_hypothesis,
-            'raw_hypothesis_output': raw_hyp
-        }
+        return raw_hyp
 
-    def _map_branches(self, state: TaskState):
-        """Map strategies to parallel branch executions."""
+    def generate(self, state: TaskState) -> dict:
+        """Generate strategies and hypotheses."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        strategies_result = self._sample_strategies(state)
+
         logger.bind(ui_event='phase_change', phase='hypothesis_generation').info(
             'Starting Hypothesis Generation...'
         )
-        num_branches = min(len(self.config.agents.branches), len(state.strategies))
+        num_branches = min(len(self.config.agents.branches), len(strategies_result['strategies']))
         logger.info(f'🌿 Spawning {num_branches} hypothesis branches...')
 
-        # Check for base sandbox from previous iteration
         base_container = getattr(state.memory, 'base_sandbox_container_id', None)
         if base_container:
             logger.info(f'📦 Using base sandbox {base_container[:12]} for all branches')
 
-        sends = []
-        for index in range(num_branches):
-            if base_container:
-                container_id = self.sandbox.setup_branch_from_base(
-                    state.count, index, base_container
-                )
-            else:
-                container_id = self.sandbox.setup_branch(state.count, index)
-            sends.append(Send('branch_executor', {
-                'index': index,
-                'count_in_branch': state.count,
-                'task_in_branch': state.task,
-                'strictness': state.task_strictness,
-                'strategy': state.strategies[index],
-                'feedback': state.feedback,
-                'container_id': container_id,
-                'intent_analysis_in_branch': state.intent_analysis
-            }))
-        return sends
+        raw_hypotheses = [None]*num_branches
 
-    def _collect_raw_hypotheses(self, state: TaskState):
-        """Collect RawHypothesis outputs from all branches."""
-        # raw_hypotheses is populated via operator.add from BranchState.raw_hypothesis_output
-        # But we need to extract from results since BranchState uses 'results'
-        # Actually, we need to access raw_hypothesis_output from BranchState
-        pass
-
-    def generate(self, state: TaskState) -> dict:
-        """Generate strategies and hypotheses."""
-        # Step 1: Sample strategies
-        strategies_result = self.sample_strategies(state)
-        updated_state = state.model_copy(update=strategies_result)
-
-        # Step 2: Execute branch workflow
-        graph = StateGraph(TaskState)
-        graph.add_node('branch_executor', self._branch_workflow)
-        graph.add_conditional_edges(START, self._map_branches, ['branch_executor'])
-        graph.add_edge('branch_executor', END)
-        workflow = graph.compile()
-
-        result = workflow.invoke(updated_state.model_dump())
-
-        # Extract raw_hypotheses from branch results
-        raw_hypotheses = []
-        for branch_result in result.get('results', []):
-            if hasattr(branch_result, 'raw_hypothesis_output') and branch_result.raw_hypothesis_output:
-                raw_hypotheses.append(branch_result.raw_hypothesis_output)
+        with ThreadPoolExecutor(max_workers=num_branches) as executor:
+            futures = {
+                executor.submit(
+                    self._generate_branch,
+                    index=i,
+                    task=state.task,
+                    strategy=strategies_result['strategies'][i],
+                    intent_analysis=strategies_result['intent_analysis'],
+                    strictness=strategies_result['task_strictness'],
+                    feedback=state.feedback or '',
+                    count=state.count,
+                    base_container_id=base_container
+                ): i for i in range(num_branches)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                raw_hypotheses[idx] = future.result()
 
         return {
             'strategies': strategies_result['strategies'],
@@ -323,163 +281,134 @@ class DeepThinkGenerator(BaseBranchesGenerator):
     and reasoning-based refinement.
     """
 
-    def __init__(self, config, sandbox, abort_event=None, global_rules=''):
-        super().__init__(config, sandbox, abort_event, global_rules)
-        self._build_workflow()
-
-    def _build_workflow(self):
-        """Build the internal subgraph for hypothesis generation with refine."""
-        branch = StateGraph(BranchState)
-        branch.add_node('sample_hypothesis', self._sample_hypothesis)
-        branch.add_node('reasoning_and_refine', self._reasoning_and_refine)
-        branch.add_edge(START, 'sample_hypothesis')
-        branch.add_edge('sample_hypothesis', 'reasoning_and_refine')
-        branch.add_edge('reasoning_and_refine', END)
-        self._branch_workflow = branch.compile()
-
-    def _sample_hypothesis(self, state: BranchState):
-        """Generate initial hypothesis for a branch."""
+    def _generate_branch(self, index, task, strategy, intent_analysis, strictness, feedback, count, base_container_id=None):
+        """Generate hypothesis with reasoning refinement for a single branch."""
         self._check_abort()
+
+        if base_container_id:
+            container_id = self.sandbox.setup_branch_from_base(count, index, base_container_id)
+        else:
+            container_id = self.sandbox.setup_branch(count, index)
+
+        # Step 1: Hypothesis
         logger.bind(
             ui_event='node_update',
             node='hypothesis',
-            branch=state.index,
+            branch=index,
             data={'type': 'processing'}
-        ).info(f'[DeepThink] Iter #{state.count_in_branch+1} | Branch[{state.index}] Sampling hypothesis...')
+        ).info(f'[DeepThink] Iter #{count+1} | Branch[{index}] Sampling hypothesis...')
 
-        hypothesis_config = self.config.agents.branches[state.index].hypothesis
-        agent = build_model(
+        hypothesis_config = self.config.agents.branches[index].hypothesis
+        hypothesis_agent = build_model(
             hypothesis_config.model_id,
             hypothesis_config.get('gcri_options'),
-            container_id=state.container_id,
+            container_id=container_id,
             **hypothesis_config.parameters
         ).with_structured_output(schema=Hypothesis)
 
-        template = self._load_template_with_rules(
+        hypothesis_template = self._load_template_with_rules(
             self.config.templates.hypothesis,
-            task=state.task_in_branch,
-            strictness=state.strictness,
-            strategy=state.strategy,
-            intent_analysis=state.intent_analysis_in_branch
+            task=task,
+            strictness=strictness,
+            strategy=strategy,
+            intent_analysis=intent_analysis
         )
         hypothesis = self._invoke_with_retry(
-            agent, template, f'Hypothesis agent at strategy #{state.index+1}'
+            hypothesis_agent, hypothesis_template, f'Hypothesis agent at strategy #{index+1}'
         )
 
         logger.bind(
             ui_event='node_update',
             node='hypothesis',
-            branch=state.index,
-            data={'hypothesis': hypothesis.hypothesis, 'container_id': state.container_id}
-        ).info(f'[DeepThink] Iter #{state.count_in_branch+1} | Branch[{state.index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
+            branch=index,
+            data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
+        ).info(f'[DeepThink] Iter #{count+1} | Branch[{index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
 
-        return {'hypothesis': hypothesis.hypothesis}
-
-    def _reasoning_and_refine(self, state: BranchState):
-        """Apply reasoning to refine the hypothesis."""
+        # Step 2: Reasoning & Refine
         self._check_abort()
         logger.bind(
             ui_event='node_update',
             node='reasoning',
-            branch=state.index,
+            branch=index,
             data={'type': 'processing'}
-        ).info(f'[DeepThink] Iter #{state.count_in_branch+1} | Branch[{state.index}] Reasoning and refining...')
+        ).info(f'[DeepThink] Iter #{count+1} | Branch[{index}] Reasoning and refining...')
 
-        reasoning_config = self.config.agents.branches[state.index].reasoning
-        agent = build_model(
+        reasoning_config = self.config.agents.branches[index].reasoning
+        reasoning_agent = build_model(
             reasoning_config.model_id,
             reasoning_config.get('gcri_options'),
-            container_id=state.container_id,
+            container_id=container_id,
             **reasoning_config.parameters
         ).with_structured_output(schema=Reasoning)
 
-        template = self._load_template_with_rules(
+        reasoning_template = self._load_template_with_rules(
             self.config.templates.reasoning,
-            task=state.task_in_branch,
-            strategy=state.strategy,
-            hypothesis=state.hypothesis,
-            intent_analysis=state.intent_analysis_in_branch
+            task=task,
+            strategy=strategy,
+            hypothesis=hypothesis.hypothesis,
+            intent_analysis=intent_analysis
         )
         reasoning = self._invoke_with_retry(
-            agent, template, f'Reasoning agent at hypothesis #{state.index+1}'
+            reasoning_agent, reasoning_template, f'Reasoning agent at hypothesis #{index+1}'
         )
 
         raw_hyp = RawHypothesis(
-            index=state.index,
-            strategy_name=state.strategy.name,
-            strategy_description=state.strategy.description,
+            index=index,
+            strategy_name=strategy.name,
+            strategy_description=strategy.description,
             hypothesis=reasoning.refined_hypothesis,
             reasoning=reasoning.reasoning,
-            container_id=state.container_id
+            container_id=container_id
         )
 
         logger.bind(
             ui_event='node_update',
             node='reasoning',
-            branch=state.index,
+            branch=index,
             data={
                 'reasoning': reasoning.reasoning,
                 'hypothesis': reasoning.refined_hypothesis,
-                'container_id': state.container_id
+                'container_id': container_id
             }
-        ).info(f'[DeepThink] Iter #{state.count_in_branch+1} | Branch[{state.index}] Refined: {reasoning.refined_hypothesis[:80]}...')
+        ).info(f'[DeepThink] Iter #{count+1} | Branch[{index}] Refined: {reasoning.refined_hypothesis[:80]}...')
 
-        return {
-            'reasoning': reasoning.reasoning,
-            'hypothesis': reasoning.refined_hypothesis,
-            'raw_hypothesis_output': raw_hyp
-        }
+        return raw_hyp
 
-    def _map_branches(self, state: TaskState):
-        """Map strategies to parallel branch executions."""
+    def generate(self, state: TaskState) -> dict:
+        """Generate strategies and hypotheses with full refinement."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        strategies_result = self._sample_strategies(state)
+
         logger.bind(ui_event='phase_change', phase='hypothesis_generation').info(
             '[DeepThink] Starting Hypothesis Generation...'
         )
-        num_branches = min(len(self.config.agents.branches), len(state.strategies))
+        num_branches = min(len(self.config.agents.branches), len(strategies_result['strategies']))
         logger.info(f'🌿 [DeepThink] Spawning {num_branches} hypothesis branches...')
 
-        # Check for base sandbox from previous iteration
         base_container = getattr(state.memory, 'base_sandbox_container_id', None)
         if base_container:
             logger.info(f'📦 [DeepThink] Using base sandbox {base_container[:12]} for all branches')
 
-        sends = []
-        for index in range(num_branches):
-            if base_container:
-                container_id = self.sandbox.setup_branch_from_base(
-                    state.count, index, base_container
-                )
-            else:
-                container_id = self.sandbox.setup_branch(state.count, index)
-            sends.append(Send('branch_executor', {
-                'index': index,
-                'count_in_branch': state.count,
-                'task_in_branch': state.task,
-                'strictness': state.task_strictness,
-                'strategy': state.strategies[index],
-                'feedback': state.feedback,
-                'container_id': container_id,
-                'intent_analysis_in_branch': state.intent_analysis
-            }))
-        return sends
+        raw_hypotheses = [None]*num_branches
 
-    def generate(self, state: TaskState) -> dict:
-        """Generate strategies and hypotheses with full refinement."""
-        strategies_result = self.sample_strategies(state)
-        updated_state = state.model_copy(update=strategies_result)
-
-        graph = StateGraph(TaskState)
-        graph.add_node('branch_executor', self._branch_workflow)
-        graph.add_conditional_edges(START, self._map_branches, ['branch_executor'])
-        graph.add_edge('branch_executor', END)
-        workflow = graph.compile()
-
-        result = workflow.invoke(updated_state.model_dump())
-
-        raw_hypotheses = []
-        for branch_result in result.get('results', []):
-            if hasattr(branch_result, 'raw_hypothesis_output') and branch_result.raw_hypothesis_output:
-                raw_hypotheses.append(branch_result.raw_hypothesis_output)
+        with ThreadPoolExecutor(max_workers=num_branches) as executor:
+            futures = {
+                executor.submit(
+                    self._generate_branch,
+                    index=i,
+                    task=state.task,
+                    strategy=strategies_result['strategies'][i],
+                    intent_analysis=strategies_result['intent_analysis'],
+                    strictness=strategies_result['task_strictness'],
+                    feedback=state.feedback or '',
+                    count=state.count,
+                    base_container_id=base_container
+                ): i for i in range(num_branches)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                raw_hypotheses[idx] = future.result()
 
         return {
             'strategies': strategies_result['strategies'],
