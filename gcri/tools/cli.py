@@ -383,18 +383,19 @@ def query_knowledge(domain: str = None, tags: str = None) -> str:
 MEMORY_TOOLS = [query_memory, save_to_memory, modify_memory, save_knowledge, query_knowledge]
 
 
-# CoMeT in-session memory context variable (set by GCRI instance)
-_comet_instance_var: ContextVar = ContextVar('comet_instance', default=None)
+# CoMeT in-session memory (shared across all branches/threads)
+_comet_instance = None
 
 
 def set_comet_instance(comet):
-    """Set the CoMeT instance for in-session memory tools."""
-    _comet_instance_var.set(comet)
+    """Set the shared CoMeT instance for in-session memory tools."""
+    global _comet_instance
+    _comet_instance = comet
 
 
 def get_comet_instance():
-    """Get the current CoMeT instance."""
-    return _comet_instance_var.get()
+    """Get the shared CoMeT instance."""
+    return _comet_instance
 
 
 @tool
@@ -410,7 +411,7 @@ def ingest_to_memory(content: str, source: str = '') -> str:
     Returns:
         Summary of how many memory nodes were created.
     """
-    comet = _comet_instance_var.get()
+    comet = _comet_instance
     if comet is None:
         return 'Error: In-session memory (CoMeT) not available.'
     nodes = comet.add_document(content, source=source)
@@ -432,7 +433,7 @@ def retrieve_from_memory(query: str) -> str:
     Returns:
         Relevant memory summaries with node IDs for deeper reading.
     """
-    comet = _comet_instance_var.get()
+    comet = _comet_instance
     if comet is None:
         return 'Error: In-session memory (CoMeT) not available.'
     results = comet.retrieve(query)
