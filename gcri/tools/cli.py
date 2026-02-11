@@ -58,6 +58,18 @@ def get_container_id():
     return GlobalVariables.CONTAINER_VAR.get()
 
 
+def _to_container_path(file_path: str) -> str:
+    """Translate host absolute paths to container /workspace/ paths."""
+    config = GlobalVariables.CONFIG
+    if config and hasattr(config, 'project_dir') and config.project_dir:
+        project_dir = config.project_dir.rstrip('/')
+        if file_path.startswith(project_dir+'/'):
+            return '/workspace'+file_path[len(project_dir):]
+        if file_path == project_dir:
+            return '/workspace'
+    return file_path
+
+
 @scope
 def _get_black_and_white_lists(config):
     black_and_white_lists = ADict.from_file(config.templates.black_and_white_lists).to_dict()
@@ -72,6 +84,9 @@ def execute_shell_command(command: str) -> str:
     container_id = get_container_id()
     if not container_id:
         return 'Error: No sandbox container available. Run within GCRI context.'
+    config = GlobalVariables.CONFIG
+    if config and hasattr(config, 'project_dir') and config.project_dir:
+        command = command.replace(config.project_dir.rstrip('/'), '/workspace')
     sandbox = get_cached_sandbox()
     return sandbox.execute_command(container_id, command)
 
@@ -83,7 +98,7 @@ def read_file(file_path: str) -> str:
     if not container_id:
         return f'Error: No sandbox container available.'
     sandbox = get_cached_sandbox()
-    result = sandbox._execute_in_container(container_id, ['cat', file_path])
+    result = sandbox._execute_in_container(container_id, ['cat', _to_container_path(file_path)])
     return result
 
 
@@ -94,10 +109,11 @@ def write_file(file_path: str, content: str) -> str:
     if not container_id:
         return f'Error: No sandbox container available.'
     sandbox = get_cached_sandbox()
-    dir_path = os.path.dirname(file_path)
+    container_path = _to_container_path(file_path)
+    dir_path = os.path.dirname(container_path)
     if dir_path:
         sandbox._execute_in_container(container_id, ['mkdir', '-p', dir_path])
-    write_cmd = f"cat > '{file_path}' << 'GCRI_WRITE_EOF'\n{content}\nGCRI_WRITE_EOF"
+    write_cmd = f"cat > '{container_path}' << 'GCRI_WRITE_EOF'\n{content}\nGCRI_WRITE_EOF"
     result = sandbox._execute_in_container(container_id, ['sh', '-c', write_cmd])
     if 'Error' in result:
         return result
