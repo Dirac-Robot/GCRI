@@ -66,6 +66,8 @@ class GCRI:
         """
         self.config = config
         set_global_variables()
+        from gcri.tools.cli import GlobalVariables
+        GlobalVariables.CONFIG = config
         self.schema = schema
         self.sandbox = SandboxManager(config)
         self.abort_event = abort_event
