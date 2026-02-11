@@ -383,6 +383,72 @@ def query_knowledge(domain: str = None, tags: str = None) -> str:
 MEMORY_TOOLS = [query_memory, save_to_memory, modify_memory, save_knowledge, query_knowledge]
 
 
+# CoMeT in-session memory context variable (set by GCRI instance)
+_comet_instance_var: ContextVar = ContextVar('comet_instance', default=None)
+
+
+def set_comet_instance(comet):
+    """Set the CoMeT instance for in-session memory tools."""
+    _comet_instance_var.set(comet)
+
+
+def get_comet_instance():
+    """Get the current CoMeT instance."""
+    return _comet_instance_var.get()
+
+
+@tool
+def ingest_to_memory(content: str, source: str = '') -> str:
+    """Ingest long content (web search results, file contents, etc.) into
+    compressed in-session memory for later retrieval.
+    Use this when tool results are too long to keep in conversation context.
+
+    Args:
+        content: The full text content to compress and store.
+        source: Source identifier (e.g. URL, file path) for traceability.
+
+    Returns:
+        Summary of how many memory nodes were created.
+    """
+    comet = _comet_instance_var.get()
+    if comet is None:
+        return 'Error: In-session memory (CoMeT) not available.'
+    nodes = comet.add_document(content, source=source)
+    if not nodes:
+        return 'No content was stored (empty input).'
+    summaries = [f'- [{n.node_id}] {n.summary}' for n in nodes]
+    return f'Stored {len(nodes)} memory nodes:\n' + '\n'.join(summaries)
+
+
+@tool
+def retrieve_from_memory(query: str) -> str:
+    """Retrieve relevant information from compressed in-session memory.
+    Use this to recall previously ingested content (web pages, files, etc.)
+    without needing the full text in context.
+
+    Args:
+        query: What information you need to recall.
+
+    Returns:
+        Relevant memory summaries with node IDs for deeper reading.
+    """
+    comet = _comet_instance_var.get()
+    if comet is None:
+        return 'Error: In-session memory (CoMeT) not available.'
+    results = comet.retrieve(query)
+    if not results:
+        context = comet.get_context_window()
+        if context.strip():
+            return f'No retrieval results. Current memory context:\n{context}'
+        return 'No memories found for this query.'
+    parts = []
+    for r in results:
+        parts.append(f'[{r.node.node_id}] (score={r.relevance_score:.2f}) {r.node.summary}\nTrigger: {r.node.trigger}')
+    return '\n---\n'.join(parts)
+
+
+COMET_TOOLS = [ingest_to_memory, retrieve_from_memory]
+
 class BranchContainerRegistry:
     """Registry for branch container IDs."""
     _containers = {}
@@ -756,6 +822,8 @@ def build_model(model_id, gcri_options=None, container_id=None, **parameters):
     tools = CLI_TOOLS if use_code_tools else []
     tools += [search_web] if use_web_search else []
     tools += MEMORY_TOOLS if use_memory_tools else []
+    use_comet = gcri_options.get('use_comet', False) if gcri_options else False
+    tools += COMET_TOOLS if use_comet else []
     return CodeAgentBuilder(
         model_id,
         tools=tools,

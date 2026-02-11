@@ -72,6 +72,11 @@ class GCRI:
         self.sandbox = SandboxManager(config)
         self.abort_event = abort_event
         self.callbacks = callbacks or AutoCallbacks()
+
+        # Initialize CoMeT in-session memory if enabled
+        self._comet = None
+        if getattr(config, 'use_comet', False):
+            self._init_comet(config)
         with open(config.templates.global_rules, 'r') as f:
             self.global_rules = f.read()
 
@@ -159,6 +164,43 @@ class GCRI:
         self._graph = graph
         self._workflow = graph.compile()
         logger.info('✅ GCRI Instance Initialized (BranchesGenerator Architecture)')
+
+    def _init_comet(self, config):
+        """Initialize CoMeT as in-session memory for the GCRI run."""
+        import tempfile
+        from gcri.tools.cli import set_comet_instance
+        try:
+            from comet.orchestrator import CoMeT
+            from ato.adict import ADict
+
+            comet_dir = tempfile.mkdtemp(prefix='gcri_comet_')
+            comet_config = ADict(
+                slm_model=config.get('comet_slm_model', 'gpt-4o-mini'),
+                main_model=config.get('comet_main_model', 'gpt-4o'),
+                compacting=ADict(load_threshold=4, max_l1_buffer=10),
+                storage=ADict(
+                    type='json',
+                    base_path=os.path.join(comet_dir, 'store'),
+                    raw_path=os.path.join(comet_dir, 'store', 'raw'),
+                ),
+                retrieval=ADict(
+                    embedding_model='text-embedding-3-small',
+                    vector_backend='chroma',
+                    vector_db_path=os.path.join(comet_dir, 'vectors'),
+                    fusion_alpha=0.5,
+                    rrf_k=5,
+                    raw_search_weight=0.2,
+                    top_k=5,
+                    rerank=False,
+                ),
+            )
+            self._comet = CoMeT(comet_config)
+            set_comet_instance(self._comet)
+            logger.info(f'☄️ CoMeT in-session memory enabled: {comet_dir}')
+        except ImportError:
+            logger.warning('⚠️ use_comet=True but comet package not installed. Skipping.')
+        except Exception as e:
+            logger.error(f'⚠️ Failed to initialize CoMeT: {e}')
 
     @property
     def graph(self):
@@ -773,6 +815,14 @@ class GCRI:
         # Update external memory on success (before commit)
         if self._external_memory:
             self._update_external_memory_on_success(result)
+
+        # Close CoMeT in-session memory
+        if self._comet:
+            try:
+                self._comet.close_session()
+                logger.info('☄️ CoMeT session closed.')
+            except Exception as e:
+                logger.warning(f'⚠️ CoMeT session close failed: {e}')
 
         commit_context = {
             'winning_branch_path': winning_branch_path,
