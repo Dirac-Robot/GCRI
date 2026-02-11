@@ -448,7 +448,27 @@ def retrieve_from_memory(query: str) -> str:
     return '\n---\n'.join(parts)
 
 
-COMET_TOOLS = [retrieve_from_memory]
+@tool
+def read_raw_memory(node_id: str) -> str:
+    """Read the full original content stored in a memory node.
+    Use node_ids from retrieve_from_memory results to read full text.
+
+    Args:
+        node_id: Memory node ID (starts with 'mem_').
+
+    Returns:
+        Full original content, or error message if not found.
+    """
+    comet = _comet_instance
+    if comet is None:
+        return 'Error: In-session memory (CoMeT) not available.'
+    raw = comet.get_raw_content(node_id)
+    if raw is None:
+        return f'No raw content found for node {node_id}.'
+    return raw
+
+
+COMET_TOOLS = [retrieve_from_memory, read_raw_memory]
 
 class BranchContainerRegistry:
     """Registry for branch container IDs."""
