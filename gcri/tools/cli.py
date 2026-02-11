@@ -448,7 +448,7 @@ def retrieve_from_memory(query: str) -> str:
     return '\n---\n'.join(parts)
 
 
-COMET_TOOLS = [ingest_to_memory, retrieve_from_memory]
+COMET_TOOLS = [retrieve_from_memory]
 
 class BranchContainerRegistry:
     """Registry for branch container IDs."""
@@ -769,7 +769,23 @@ class RecursiveToolAgent(Runnable):
                                 output = tool_fn.invoke(args)
                             except Exception as e:
                                 output = f'Tool Error: {e}'
-                        outputs.append(ToolMessage(content=str(output), tool_call_id=call_id, name=name))
+                        output_str = str(output)
+                        # Auto-ingest long tool outputs into CoMeT
+                        comet = _comet_instance
+                        if comet and len(output_str) > 2000 and name not in ('retrieve_from_memory',):
+                            try:
+                                source = f'tool:{name}'
+                                nodes = comet.add_document(output_str, source=source)
+                                if nodes:
+                                    node_summaries = '; '.join(n.summary[:80] for n in nodes[:3])
+                                    output_str = (
+                                        f'[Content compressed into {len(nodes)} memory node(s): {node_summaries}]\n'
+                                        f'Use retrieve_from_memory(query) to recall specific details.'
+                                    )
+                                    logger.info(f'☄️ Auto-ingested {name} output ({len(str(output))} chars) -> {len(nodes)} nodes')
+                            except Exception as e:
+                                logger.warning(f'⚠️ CoMeT auto-ingest failed for {name}: {e}')
+                        outputs.append(ToolMessage(content=output_str, tool_call_id=call_id, name=name))
                 messages.extend(outputs)
                 recursion_count += 1
                 if self.max_recursion_depth is not None and recursion_count >= self.max_recursion_depth:
