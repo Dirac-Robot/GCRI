@@ -208,180 +208,6 @@ def search_web(query: str) -> str:
         return f'Search Error: {e}'
 
 
-# External Memory context variable (set by GCRI instance)
-_external_memory_var: ContextVar = ContextVar('external_memory', default=None)
-
-
-def set_external_memory(memory):
-    """Set the external memory instance for memory tools."""
-    _external_memory_var.set(memory)
-
-
-@tool
-def query_memory(domain: str = None) -> str:
-    """
-    Query learned rules from external memory for the current task domain.
-    Use this to retrieve past learnings that may help avoid known pitfalls.
-
-    Args:
-        domain: Optional domain hint (e.g., 'coding', 'math', 'dp_algorithms')
-
-    Returns:
-        List of learned rules, or message if no rules found.
-    """
-    memory = _external_memory_var.get()
-    if memory is None:
-        return 'External memory not available.'
-    rules = memory.load(domain=domain)
-    if not rules:
-        return f'No rules found for domain: {domain or "global"}'
-    return 'Learned rules:\n' + '\n'.join(f'- {r}' for r in rules)
-
-
-@tool
-def save_to_memory(rule: str, domain: str = None) -> str:
-    """
-    Save a useful rule to external memory for future tasks.
-    Use this when you discover a reusable pattern or constraint.
-
-    Args:
-        rule: The rule to save (should be concise and actionable)
-        domain: Optional domain to categorize the rule
-
-    Returns:
-        Confirmation message.
-    """
-    memory = _external_memory_var.get()
-    if memory is None:
-        return 'External memory not available.'
-    memory.save([rule], domain=domain)
-    return f'Rule saved to external memory (domain: {domain or "global"})'
-
-
-@tool
-def modify_memory(old_rule: str, new_rule: str, domain: str = None) -> str:
-    """
-    Modify or delete an existing rule in external memory.
-    Use this to update outdated rules or remove incorrect ones.
-
-    Args:
-        old_rule: The rule to modify (exact match required)
-        new_rule: The new rule text (empty string to delete)
-        domain: Optional domain where the rule exists
-
-    Returns:
-        Confirmation message.
-    """
-    memory = _external_memory_var.get()
-    if memory is None:
-        return 'External memory not available.'
-    
-    # Find and modify/delete in appropriate location
-    modified = False
-    if domain:
-        rules = memory._data.get('domain_rules', {}).get(domain, [])
-        if old_rule in rules:
-            rules.remove(old_rule)
-            if new_rule:
-                rules.append(new_rule)
-            modified = True
-    else:
-        rules = memory._data.get('global_rules', [])
-        if old_rule in rules:
-            rules.remove(old_rule)
-            if new_rule:
-                rules.append(new_rule)
-            modified = True
-    
-    if modified:
-        memory._save_to_disk()
-        action = 'deleted' if not new_rule else 'modified'
-        return f'Rule {action} in external memory (domain: {domain or "global"})'
-    return f'Rule not found in external memory (domain: {domain or "global"})'
-
-
-@tool
-def save_knowledge(
-    domain: str,
-    knowledge_type: str,
-    title: str,
-    content: str,
-    code: str = None,
-    tags: str = None,
-    source_date: str = None,
-    source_url: str = None,
-    source_reliability: str = None
-) -> str:
-    """
-    Save structured knowledge to external memory for future tasks.
-    Use this when you discover a useful pattern, concept, or algorithm.
-
-    Args:
-        domain: Domain to categorize (e.g., 'dp_algorithms', 'coding')
-        knowledge_type: Type of knowledge ('pattern', 'concept', 'algorithm')
-        title: Short, descriptive title
-        content: Detailed explanation or description
-        code: Optional code example (as string)
-        tags: Optional comma-separated tags for search (e.g., 'binary_search,dp')
-        source_date: Optional source document date (for web search results, e.g., '2024-01-15')
-        source_url: Optional source URL (for web search results, e.g., 'https://arxiv.org/abs/...')
-        source_reliability: Optional source reliability ('high'=arXiv/Nature/ACL, 'medium'=blog, 'low'=general)
-
-    Returns:
-        Confirmation message.
-    """
-    memory = _external_memory_var.get()
-    if memory is None:
-        return 'External memory not available.'
-    tag_list = [t.strip() for t in tags.split(',')] if tags else None
-    memory.save_knowledge(
-        domain=domain,
-        knowledge_type=knowledge_type,
-        title=title,
-        content=content,
-        code=code,
-        tags=tag_list,
-        source_date=source_date,
-        source_url=source_url,
-        source_reliability=source_reliability
-    )
-    return f'Knowledge saved: "{title}" in domain "{domain}"'
-
-
-
-@tool
-def query_knowledge(domain: str = None, tags: str = None) -> str:
-    """
-    Query stored knowledge from external memory.
-    Use this to retrieve patterns, concepts, or algorithms from past tasks.
-
-    Args:
-        domain: Optional domain filter (e.g., 'dp_algorithms')
-        tags: Optional comma-separated tags to filter (e.g., 'binary_search,dp')
-
-    Returns:
-        Formatted knowledge entries or message if none found.
-    """
-    memory = _external_memory_var.get()
-    if memory is None:
-        return 'External memory not available.'
-    tag_list = [t.strip() for t in tags.split(',')] if tags else None
-    entries = memory.load_knowledge(domain=domain, tags=tag_list)
-    if not entries:
-        return f'No knowledge found for domain: {domain or "all"}, tags: {tags or "none"}'
-    result_lines = ['Stored Knowledge:']
-    for entry in entries:
-        result_lines.append(f'\n### [{entry["type"]}] {entry["title"]} (domain: {entry["domain"]})')
-        result_lines.append(entry['content'])
-        if entry.get('code'):
-            result_lines.append(f'```\n{entry["code"]}\n```')
-        if entry.get('tags'):
-            result_lines.append(f'Tags: {", ".join(entry["tags"])}')
-    return '\n'.join(result_lines)
-
-
-MEMORY_TOOLS = [query_memory, save_to_memory, modify_memory, save_knowledge, query_knowledge]
-
 
 # CoMeT in-session memory (shared across all branches/threads)
 _comet_instance = None
@@ -493,7 +319,7 @@ def read_raw_memory(node_id: str) -> str:
     return raw
 
 
-COMET_TOOLS = [retrieve_from_memory, read_detailed_summary, read_raw_memory]
+COMET_TOOLS = [ingest_to_memory, retrieve_from_memory, read_detailed_summary, read_raw_memory]
 
 class BranchContainerRegistry:
     """Registry for branch container IDs."""
@@ -874,17 +700,15 @@ def build_model(model_id, gcri_options=None, container_id=None, **parameters):
     if gcri_options is not None:
         use_code_tools = gcri_options.get('use_code_tools', False)
         use_web_search = gcri_options.get('use_web_search', False)
-        use_memory_tools = gcri_options.get('use_memory_tools', True)  # Default True
+        use_comet = gcri_options.get('use_comet', False)
         max_recursion_depth = gcri_options.get('max_recursion_depth', 50)
     else:
         use_code_tools = False
         use_web_search = False
-        use_memory_tools = True  # Default True
+        use_comet = False
         max_recursion_depth = 50
     tools = CLI_TOOLS if use_code_tools else []
     tools += [search_web] if use_web_search else []
-    tools += MEMORY_TOOLS if use_memory_tools else []
-    use_comet = gcri_options.get('use_comet', False) if gcri_options else False
     tools += COMET_TOOLS if use_comet else []
     return CodeAgentBuilder(
         model_id,

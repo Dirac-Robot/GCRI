@@ -27,9 +27,8 @@ from gcri.graphs.states import (
 from gcri.graphs.callbacks import GCRICallbacks, CLICallbacks
 from gcri.graphs.aggregator import HypothesisAggregator
 from gcri.graphs.generators import get_branches_generator
-from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry, set_global_variables, set_external_memory
+from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry, set_global_variables
 from gcri.tools.utils import SandboxManager
-from gcri.memory.external_memory import ExternalMemory
 
 
 class TaskAbortedError(Exception):
@@ -73,7 +72,7 @@ class GCRI:
         self.abort_event = abort_event
         self.callbacks = callbacks or CLICallbacks()
 
-        # Initialize CoMeT in-session memory if enabled
+        # Initialize CoMeT as unified memory (in-session + persistent)
         self._comet = None
         if getattr(config, 'use_comet', False):
             self._init_comet(config)
@@ -87,16 +86,6 @@ class GCRI:
             generator_type, config, self.sandbox, abort_event, self.global_rules
         )
         logger.info(f'🔧 BranchesGenerator type: {generator_type} ({type(self._branches_generator).__name__})')
-
-        # Initialize external memory if enabled
-        self._external_memory = None
-        if getattr(config, 'external_memory', {}).get('enabled', False):
-            ext_path = config.external_memory.get('path')
-            if not ext_path:
-                ext_path = os.path.join(config.run_dir, 'external_memory.json')
-            self._external_memory = ExternalMemory(ext_path)
-            set_external_memory(self._external_memory)
-            logger.info(f'🧠 External memory enabled: {ext_path}')
 
         # Build main graph
         graph = StateGraph(TaskState)
@@ -166,14 +155,20 @@ class GCRI:
         logger.info('✅ GCRI Instance Initialized (BranchesGenerator Architecture)')
 
     def _init_comet(self, config):
-        """Initialize CoMeT as in-session memory for the GCRI run."""
-        import tempfile
+        """Initialize CoMeT as unified persistent memory.
+
+        Uses persistent path ({run_dir}/comet_store/) so knowledge
+        accumulates across tasks. Each task = 1 CoMeT session.
+        In-loop: compression/key-mapping (session-scoped)
+        Out-loop: persistent storage + cross-session retrieval
+        """
         from gcri.tools.cli import set_comet_instance
         try:
             from comet.orchestrator import CoMeT
             from ato.adict import ADict
 
-            comet_dir = tempfile.mkdtemp(prefix='gcri_comet_')
+            comet_dir = os.path.join(config.run_dir, 'comet_store')
+            os.makedirs(comet_dir, exist_ok=True)
             comet_config = ADict(
                 slm_model='gpt-4o-mini',
                 main_model='gpt-4o',
@@ -196,7 +191,7 @@ class GCRI:
             )
             self._comet = CoMeT(comet_config)
             set_comet_instance(self._comet)
-            logger.info(f'☄️ CoMeT in-session memory enabled: {comet_dir}')
+            logger.info(f'☄️ CoMeT persistent memory enabled: {comet_dir}')
         except ImportError:
             logger.warning('⚠️ use_comet=True but comet package not installed. Skipping.')
         except Exception as e:
@@ -847,15 +842,15 @@ class GCRI:
         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
         logger.info(f'📂 Location: {winning_branch_path}')
 
-        # Update external memory on success (before commit)
-        if self._external_memory:
-            self._update_external_memory_on_success(result)
+        # Ingest task result into CoMeT persistent memory
+        if self._comet:
+            self._ingest_task_result(result)
 
-        # Close CoMeT in-session memory
+        # Close CoMeT session (auto-consolidates)
         if self._comet:
             try:
                 self._comet.close_session()
-                logger.info('☄️ CoMeT session closed.')
+                logger.info('☄️ CoMeT session closed and consolidated.')
             except Exception as e:
                 logger.warning(f'⚠️ CoMeT session close failed: {e}')
 
@@ -874,27 +869,18 @@ class GCRI:
             logger.info('Changes discarded.')
         return True
 
-    def _update_external_memory_on_success(self, result):
-        """Update external memory on successful task completion (decision=True)."""
+    def _ingest_task_result(self, result):
+        """Ingest successful task result into CoMeT persistent memory."""
         try:
-            ext_memory_template_path = self.config.templates.get('external_memory_update')
-            if not ext_memory_template_path:
-                logger.debug('external_memory_update template not configured, skipping')
-                return
-            with open(ext_memory_template_path, 'r') as f:
-                ext_memory_template = f.read()
             result_summary = result.get('final_output', str(result))
-            prompt = ext_memory_template.format(result_summary=result_summary)
-            prompt = f'{self.global_rules}\n\n{prompt}'
-            if self._comet:
-                comet_ctx = self._comet.get_context_window()
-                if comet_ctx.strip():
-                    prompt += f'\n\n## In-Session Memory (CoMeT)\n{comet_ctx}'
-            memory_agent = self.memory_agent
-            memory_agent.invoke(prompt)
-            logger.info('External memory update completed on success')
+            if result_summary:
+                self._comet.add_document(
+                    result_summary,
+                    source='gcri_task_result'
+                )
+                logger.info('☄️ Task result ingested into CoMeT persistent memory')
         except Exception as e:
-            logger.warning(f'External memory update on success failed: {e}')
+            logger.warning(f'CoMeT task result ingestion failed: {e}')
 
 
     def __call__(self, task, initial_memory=None, commit_mode='manual'):
@@ -913,15 +899,17 @@ class GCRI:
             memory = initial_memory if initial_memory is not None else StructuredMemory()
             feedback = ''
             start_index = 0
-            # Search external memory for task-relevant rules
-            if self._external_memory:
+            # Retrieve task-relevant knowledge from CoMeT (cross-session)
+            if self._comet:
                 task_query = task if isinstance(task, str) else str(task)
-                ext_rules = self._external_memory.search(
-                    task_query, domain=getattr(self.config, 'task_domain', None)
-                )
-                if ext_rules:
-                    memory.active_constraints.extend(ext_rules)
-                    logger.info(f'🧠 Loaded {len(ext_rules)} relevant rules from external memory')
+                try:
+                    results = self._comet.retrieve(task_query, top_k=10)
+                    if results:
+                        for r in results:
+                            memory.active_constraints.append(r.node.summary)
+                        logger.info(f'☄️ Retrieved {len(results)} relevant memories from CoMeT')
+                except Exception as e:
+                    logger.warning(f'⚠️ CoMeT cross-session retrieval failed: {e}')
         try:
             for index in range(start_index, self.config.protocols.max_iterations):
                 logger.info('=' * 60)
