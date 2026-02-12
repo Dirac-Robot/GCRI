@@ -24,7 +24,7 @@ from gcri.graphs.states import (
     TaskState, BranchState, VerificationBranchState,
     HypothesisResult, IterationLog, StructuredMemory
 )
-from gcri.graphs.callbacks import AutoCallbacks
+from gcri.graphs.callbacks import GCRICallbacks, CLICallbacks
 from gcri.graphs.aggregator import HypothesisAggregator
 from gcri.graphs.generators import get_branches_generator
 from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry, set_global_variables, set_external_memory
@@ -62,7 +62,7 @@ class GCRI:
             config: Configuration object with model IDs, templates, and protocol settings.
             schema: Optional Pydantic BaseModel for structured final output.
             abort_event: Optional threading.Event for cooperative task cancellation.
-            callbacks: Optional GCRICallbacks instance. Defaults to AutoCallbacks.
+            callbacks: Optional GCRICallbacks instance. Defaults to CLICallbacks.
         """
         self.config = config
         set_global_variables()
@@ -71,7 +71,7 @@ class GCRI:
         self.schema = schema
         self.sandbox = SandboxManager(config)
         self.abort_event = abort_event
-        self.callbacks = callbacks or AutoCallbacks()
+        self.callbacks = callbacks or CLICallbacks()
 
         # Initialize CoMeT in-session memory if enabled
         self._comet = None
@@ -240,6 +240,7 @@ class GCRI:
 
     def aggregate_hypotheses(self, state: TaskState):
         """Aggregate raw hypotheses using HypothesisAggregator."""
+        self.callbacks.on_phase_change('aggregation', iteration=state.count)
         logger.bind(ui_event='phase_change', phase='aggregation').info(
             'Starting Hypothesis Aggregation...'
         )
@@ -274,6 +275,7 @@ class GCRI:
 
     def map_verification_branches(self, state: TaskState):
         """Map aggregated branches to parallel verification branches."""
+        self.callbacks.on_phase_change('verification', iteration=state.count_in_branch)
         logger.bind(ui_event='phase_change', phase='verification').info(
             'Starting Verification...'
         )
@@ -344,8 +346,22 @@ class GCRI:
             dict: Contains 'strategies', 'raw_hypotheses', and related metadata.
         """
         self._check_abort()
+        self.callbacks.on_phase_change('strategy', iteration=state.count)
         logger.info(f'Iter #{state.count+1} | Generating branches via {type(self._branches_generator).__name__}...')
-        return self._branches_generator.generate(state)
+        result = self._branches_generator.generate(state)
+        strategies = result.get('strategies', [])
+        if strategies:
+            strat_dicts = [s.model_dump() if hasattr(s, 'model_dump') else s for s in strategies]
+            self.callbacks.on_strategies_generated(state.count, strat_dicts)
+        raw_hyps = result.get('raw_hypotheses', [])
+        for hyp in raw_hyps:
+            h = hyp.model_dump() if hasattr(hyp, 'model_dump') else hyp
+            self.callbacks.on_hypothesis_generated(
+                state.count, h.get('index', 0),
+                str(h.get('hypothesis', ''))[:200],
+                h.get('strategy_name', '')
+            )
+        return result
 
     def _check_abort(self):
         """Check if abort has been requested and raise TaskAbortedError if so."""
@@ -440,6 +456,10 @@ class GCRI:
             f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Verification: '
             f'{verification.counter_strength.upper()} counter'
         )
+        self.callbacks.on_verification_complete(
+            state.count_in_branch, state.index,
+            verification.counter_strength, verification.counter_example
+        )
         return {'results': [result]}
 
     def verify_aggregated(self, state: VerificationBranchState):
@@ -521,6 +541,10 @@ class GCRI:
             f'Iter #{state.count_in_branch+1} | VerifyBranch[{state.index}] Verification: '
             f'{verification.counter_strength.upper()} counter'
         )
+        self.callbacks.on_verification_complete(
+            state.count_in_branch, state.index,
+            verification.counter_strength, verification.counter_example
+        )
         return {'results': [result]}
 
     @classmethod
@@ -547,6 +571,7 @@ class GCRI:
                   'final_output', 'feedback', and updated 'memory'.
         """
         self._check_abort()
+        self.callbacks.on_phase_change('decision', iteration=state.count)
         logger.bind(ui_event='phase_change', phase='decision').info('Starting Decision Phase...')
         logger.info(f'Iter #{state.count+1} | Request generating final decision for current loop...')
         BranchContainerRegistry.set_containers(state.count, self.sandbox._branch_containers)
@@ -613,6 +638,11 @@ class GCRI:
                 logger.warning('Decision is True but best_branch_index is -1')
         else:
             logger.info(f'Feedback: {decision.global_feedback}')
+        evals = [e.model_dump(mode='json') if hasattr(e, 'model_dump') else e for e in getattr(decision, 'branch_evaluations', [])]
+        self.callbacks.on_decision(
+            state.count, decision.decision, decision.best_branch_index,
+            decision.global_feedback, evals
+        )
         return {
             'decision': decision.decision,
             'best_branch_index': decision.best_branch_index,
@@ -643,6 +673,7 @@ class GCRI:
             dict: Updated 'memory' and 'feedback' for next iteration.
         """
         self._check_abort()
+        self.callbacks.on_phase_change('memory', iteration=state.count)
         logger.bind(ui_event='phase_change', phase='memory').info('Updating Memory...')
         current_memory = state.memory
         memory_template_path = self.config.templates.memory
@@ -891,6 +922,7 @@ class GCRI:
         try:
             for index in range(start_index, self.config.protocols.max_iterations):
                 logger.info('=' * 60)
+                self.callbacks.on_iteration_start(index, self.config.protocols.max_iterations)
                 logger.bind(ui_event='phase_change', phase='strategy', iteration=index).info(
                     f'🔄 Starting Iteration {index+1}/{self.config.protocols.max_iterations}'
                 )
@@ -903,9 +935,9 @@ class GCRI:
                     })
                     result = TypeAdapter(TaskState).validate_python(result).model_dump(mode='json')
                     self.sandbox.save_iteration_log(index, result)
+                    self.callbacks.on_iteration_complete(index, result)
                     if result['decision']:
                         self._handle_iteration_success(result, index, commit_mode)
-                        # Save useful constraints to external memory on success
                         if self._external_memory and memory.active_constraints:
                             self._external_memory.save(
                                 memory.active_constraints,
@@ -933,9 +965,13 @@ class GCRI:
                 result['final_output'] = 'Task aborted by user.'
             else:
                 result = {'final_output': 'Task aborted by user before first iteration completion.'}
+        except Exception as e:
+            self.callbacks.on_task_error(e)
+            raise
         finally:
             self.sandbox.clean_up()
-            elapsed = time.time() - start_time
+            elapsed = time.time()-start_time
+            self.callbacks.on_task_complete(result, elapsed)
             logger.info(f'🧹 Sandbox clean-up completed.')
             logger.info(f'⏱️ Total elapsed time: {elapsed:.2f}s ({elapsed/60:.1f}min)')
         return result
