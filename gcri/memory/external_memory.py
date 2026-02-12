@@ -44,7 +44,7 @@ class ExternalMemory:
 
     def load(self, domain: Optional[str] = None) -> List[str]:
         """
-        Load rules from external memory.
+        Load ALL rules from external memory.
 
         Args:
             domain: Optional domain hint (e.g., 'coding', 'math')
@@ -56,6 +56,72 @@ class ExternalMemory:
         if domain and domain in self._data.get('domain_rules', {}):
             rules.extend(self._data['domain_rules'][domain])
         return rules
+
+    def search(
+        self, query: str, domain: Optional[str] = None,
+        top_k: int = 10, threshold: float = 0.05
+    ) -> List[str]:
+        """Load rules relevant to query via bag-of-words cosine similarity.
+
+        Falls back to load() if there are few enough rules (<=top_k).
+
+        Args:
+            query: Task description to match against
+            domain: Optional domain hint
+            top_k: Maximum number of rules to return
+            threshold: Minimum similarity score to include
+
+        Returns:
+            List of most relevant rules
+        """
+        all_rules = self.load(domain=domain)
+        if len(all_rules) <= top_k:
+            return all_rules
+        scored = [(rule, self._cosine_sim(query, rule)) for rule in all_rules]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [rule for rule, score in scored[:top_k] if score >= threshold]
+
+    def search_knowledge(
+        self, query: str, domain: Optional[str] = None,
+        top_k: int = 5, threshold: float = 0.05
+    ) -> List[Dict[str, Any]]:
+        """Load knowledge entries relevant to query.
+
+        Args:
+            query: Task description to match against
+            domain: Optional domain filter
+            top_k: Maximum entries to return
+            threshold: Minimum similarity score
+
+        Returns:
+            List of most relevant knowledge entries
+        """
+        all_knowledge = self.load_knowledge(domain=domain)
+        if len(all_knowledge) <= top_k:
+            return all_knowledge
+        scored = []
+        for entry in all_knowledge:
+            text = f'{entry.get("title", "")} {entry.get("content", "")} {" ".join(entry.get("tags", []))}'
+            scored.append((entry, self._cosine_sim(query, text)))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [entry for entry, score in scored[:top_k] if score >= threshold]
+
+    @staticmethod
+    def _cosine_sim(a: str, b: str) -> float:
+        """Bag-of-words cosine similarity (no external deps)."""
+        import math
+        from collections import Counter
+        tokens_a = Counter(a.lower().split())
+        tokens_b = Counter(b.lower().split())
+        common = set(tokens_a) & set(tokens_b)
+        if not common:
+            return 0.0
+        dot = sum(tokens_a[w]*tokens_b[w] for w in common)
+        mag_a = math.sqrt(sum(v*v for v in tokens_a.values()))
+        mag_b = math.sqrt(sum(v*v for v in tokens_b.values()))
+        if mag_a == 0 or mag_b == 0:
+            return 0.0
+        return dot/(mag_a*mag_b)
 
     def save(self, rules: List[str], domain: Optional[str] = None, as_global: bool = False):
         """

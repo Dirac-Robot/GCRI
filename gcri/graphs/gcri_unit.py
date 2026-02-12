@@ -913,12 +913,15 @@ class GCRI:
             memory = initial_memory if initial_memory is not None else StructuredMemory()
             feedback = ''
             start_index = 0
-            # Load external memory rules if available
+            # Search external memory for task-relevant rules
             if self._external_memory:
-                ext_rules = self._external_memory.load(domain=getattr(self.config, 'task_domain', None))
+                task_query = task if isinstance(task, str) else str(task)
+                ext_rules = self._external_memory.search(
+                    task_query, domain=getattr(self.config, 'task_domain', None)
+                )
                 if ext_rules:
                     memory.active_constraints.extend(ext_rules)
-                    logger.info(f'🧠 Loaded {len(ext_rules)} rules from external memory')
+                    logger.info(f'🧠 Loaded {len(ext_rules)} relevant rules from external memory')
         try:
             for index in range(start_index, self.config.protocols.max_iterations):
                 logger.info('=' * 60)
