@@ -126,7 +126,7 @@ class DockerSandbox:
         self._execute_in_container(container_id, ['rm', '-f', script_name])
         return result
 
-    def _execute_in_container(self, container_id: str, command: list) -> str:
+    def _execute_in_container(self, container_id: str, command: list, stdout_only: bool = False) -> str:
         exec_cmd = ['docker', 'exec', container_id]+command
         try:
             result = subprocess.run(
@@ -135,6 +135,10 @@ class DockerSandbox:
                 text=True,
                 timeout=self.timeout+5
             )
+            if stdout_only:
+                if result.returncode != 0:
+                    return f'Error (exit {result.returncode}): {result.stderr.strip()}'
+                return result.stdout
             output = result.stdout+result.stderr
             if result.returncode != 0 and not output.strip():
                 output = f'Exit Code {result.returncode}'
@@ -368,7 +372,8 @@ class DockerSandbox:
             result = self._execute_in_container(
                 container_id,
                 ['find', '/workspace', '-newer', '/workspace/.gcri_baseline',
-                 '-type', 'f', '!', '-name', '.gcri_baseline', '!', '-path', '*/__pycache__/*']
+                 '-type', 'f', '!', '-name', '.gcri_baseline', '!', '-path', '*/__pycache__/*'],
+                stdout_only=True
             )
             if result.startswith('Error'):
                 logger.warning(f'Failed to find modified files: {result}')
@@ -380,8 +385,8 @@ class DockerSandbox:
                 if not line or line == '(Success, no output)':
                     continue
                 # Get file content
-                content = self._execute_in_container(container_id, ['cat', line])
-                if not content.startswith('Error'):
+                content = self._execute_in_container(container_id, ['cat', line], stdout_only=True)
+                if not content.startswith('Error (exit'):
                     # Convert to relative path
                     rel_path = line.replace('/workspace/', '', 1)
                     files[rel_path] = content

@@ -641,19 +641,16 @@ class RecursiveToolAgent(Runnable):
                             except Exception as e:
                                 output = f'Tool Error: {e}'
                         output_str = str(output)
-                        # Auto-ingest long tool outputs into CoMeT
+                        # Auto-ingest long tool outputs into CoMeT (background, non-blocking)
                         comet = _comet_instance
                         if comet and len(output_str) > 1000 and name not in ('retrieve_from_memory',):
                             try:
                                 source = f'tool:{name}'
-                                nodes = comet.add_document(output_str, source=source)
-                                if nodes:
-                                    node_summaries = '; '.join(n.summary[:80] for n in nodes[:3])
-                                    output_str = (
-                                        f'[Content compressed into {len(nodes)} memory node(s): {node_summaries}]\n'
-                                        f'Use retrieve_from_memory(query) to recall specific details.'
-                                    )
-                                    logger.info(f'☄️ Auto-ingested {name} output ({len(str(output))} chars) -> {len(nodes)} nodes')
+                                char_count = len(output_str)
+                                def _on_ingested(nodes, _src=source, _n=char_count):
+                                    if nodes:
+                                        logger.info(f'☄️ Auto-ingested {_src} output ({_n} chars) -> {len(nodes)} nodes')
+                                comet.add_document(output_str, source=source, background=True, on_complete=_on_ingested)
                             except Exception as e:
                                 logger.warning(f'⚠️ CoMeT auto-ingest failed for {name}: {e}')
                         outputs.append(ToolMessage(content=output_str, tool_call_id=call_id, name=name))

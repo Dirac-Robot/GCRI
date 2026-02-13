@@ -876,9 +876,12 @@ class GCRI:
             if result_summary:
                 self._comet.add_document(
                     result_summary,
-                    source='gcri_task_result'
+                    source='gcri_task_result',
+                    background=True,
+                    on_complete=lambda nodes: logger.info(
+                        f'☄️ Task result ingested into CoMeT ({len(nodes)} nodes)'
+                    ) if True else None,
                 )
-                logger.info('☄️ Task result ingested into CoMeT persistent memory')
         except Exception as e:
             logger.warning(f'CoMeT task result ingestion failed: {e}')
 
@@ -903,6 +906,7 @@ class GCRI:
             if self._comet:
                 task_query = task if isinstance(task, str) else str(task)
                 try:
+                    self._comet.drain()
                     results = self._comet.retrieve(task_query, top_k=10)
                     if results:
                         for r in results:

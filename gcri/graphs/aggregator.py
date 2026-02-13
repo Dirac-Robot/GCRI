@@ -49,8 +49,6 @@ class HypothesisAggregator:
         """
         files = {}
         try:
-            # Find files modified after baseline marker (created at container setup)
-            # If marker doesn't exist, return empty (no changes tracked)
             result = self.sandbox._execute_in_container(
                 container_id,
                 ['sh', '-c',
@@ -62,9 +60,10 @@ class HypothesisAggregator:
                  '-not -path "*/.gcri*" '
                  '-not -name "*.pyc" '
                  '-not -name ".gcri_baseline"; '
-                 'fi']
+                 'fi'],
+                stdout_only=True
             )
-            if 'Error' in result:
+            if result.startswith('Error'):
                 logger.warning(f'Failed to list modified files: {result}')
                 return files
 
@@ -74,10 +73,10 @@ class HypothesisAggregator:
             for file_path in file_paths:
                 content = self.sandbox._execute_in_container(
                     container_id,
-                    ['cat', file_path]
+                    ['cat', file_path],
+                    stdout_only=True
                 )
-                if 'Error' not in content and 'No such file' not in content:
-                    # Store relative path from /workspace
+                if not content.startswith('Error (exit'):
                     rel_path = file_path.replace('/workspace/', '')
                     files[rel_path] = content
 

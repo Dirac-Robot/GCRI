@@ -30,8 +30,7 @@ def default(config):
     config.agents.planner = dict(
         model_id='gpt-5.2',
         parameters=ADict(
-            max_tokens=25600,
-            reasoning_effort='low'
+            max_completion_tokens=16384
         ),
         gcri_options=ADict(
             use_web_search=True
@@ -40,15 +39,13 @@ def default(config):
     config.agents.compression = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_tokens=25600,
-            reasoning_effort='low'
+            max_completion_tokens=16384
         )
     )
     config.agents.strategy_generator = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_tokens=25600,
-            reasoning_effort='low'
+            max_completion_tokens=16384
         ),
         gcri_options=ADict(
             use_web_search=True
@@ -57,8 +54,7 @@ def default(config):
     config.agents.decision = ADict(
         model_id='gpt-5.2',
         parameters=ADict(
-            max_tokens=25600,
-            reasoning_effort='low'
+            max_completion_tokens=16384
         ),
         gcri_options=ADict(
             use_code_tools=True,
@@ -69,8 +65,7 @@ def default(config):
     config.agents.memory = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_tokens=25600,
-            reasoning_effort='low'
+            max_completion_tokens=16384
         ),
         gcri_options=ADict(
             use_code_tools=True,
@@ -81,8 +76,7 @@ def default(config):
     config.agents.aggregator = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_tokens=25600,
-            reasoning_effort='low'
+            max_completion_tokens=16384
         )
     )
     config.template_version = 'v0.1.1'
@@ -126,8 +120,7 @@ def default(config):
                 agent_name: ADict(
                     model_id='gpt-5-mini',
                     parameters=dict(
-                        max_tokens=25600,
-                        reasoning_effort='low'
+                        max_completion_tokens=16384
                     ),
                     gcri_options=ADict(
                         use_code_tools=True,
