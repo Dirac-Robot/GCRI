@@ -211,12 +211,14 @@ def search_web(query: str) -> str:
 
 # CoMeT in-session memory (shared across all branches/threads)
 _comet_instance = None
+_comet_ingest_count = 0
 
 
 def set_comet_instance(comet):
     """Set the shared CoMeT instance for in-session memory tools."""
-    global _comet_instance
+    global _comet_instance, _comet_ingest_count
     _comet_instance = comet
+    _comet_ingest_count = 0
 
 
 def get_comet_instance():
@@ -641,16 +643,29 @@ class RecursiveToolAgent(Runnable):
                             except Exception as e:
                                 output = f'Tool Error: {e}'
                         output_str = str(output)
-                        # Auto-ingest long tool outputs into CoMeT (background, non-blocking)
+                        # Auto-ingest long tool outputs into CoMeT
+                        # Rolling window: first 2 raw + silent ingest, 3rd onward replaced with reference
                         comet = _comet_instance
                         if comet and len(output_str) > 1000 and name not in ('retrieve_from_memory',):
+                            global _comet_ingest_count
+                            _comet_ingest_count += 1
                             try:
                                 source = f'tool:{name}'
                                 char_count = len(output_str)
-                                def _on_ingested(nodes, _src=source, _n=char_count):
+                                if _comet_ingest_count <= 2:
+                                    def _on_ingested(nodes, _src=source, _n=char_count):
+                                        if nodes:
+                                            logger.info(f'☄️ Auto-ingested {_src} output ({_n} chars) -> {len(nodes)} nodes')
+                                    comet.add_document(output_str, source=source, background=True, on_complete=_on_ingested)
+                                else:
+                                    nodes = comet.add_document(output_str, source=source)
                                     if nodes:
-                                        logger.info(f'☄️ Auto-ingested {_src} output ({_n} chars) -> {len(nodes)} nodes')
-                                comet.add_document(output_str, source=source, background=True, on_complete=_on_ingested)
+                                        node_summaries = '; '.join(n.summary[:80] for n in nodes[:3])
+                                        output_str = (
+                                            f'[Content compressed into {len(nodes)} memory node(s): {node_summaries}]\n'
+                                            f'Use retrieve_from_memory(query) to recall specific details.'
+                                        )
+                                        logger.info(f'☄️ Auto-ingested {name} output ({char_count} chars) -> {len(nodes)} nodes')
                             except Exception as e:
                                 logger.warning(f'⚠️ CoMeT auto-ingest failed for {name}: {e}')
                         outputs.append(ToolMessage(content=output_str, tool_call_id=call_id, name=name))
