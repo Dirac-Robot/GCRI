@@ -270,7 +270,7 @@ class GCRI:
 
     def map_verification_branches(self, state: TaskState):
         """Map aggregated branches to parallel verification branches."""
-        self.callbacks.on_phase_change('verification', iteration=state.count_in_branch)
+        self.callbacks.on_phase_change('verification', iteration=state.count)
         logger.bind(ui_event='phase_change', phase='verification').info(
             'Starting Verification...'
         )
