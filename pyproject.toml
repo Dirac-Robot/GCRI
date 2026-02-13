@@ -1,6 +1,6 @@
 [project]
 name = "gcri"
-version = "0.1.3"
+version = "0.1.4"
 description = "Graph-based Collective Reasoning Interface - A multi-branch reasoning system for LLM agents"
 readme = "README.md"
 license = {text = "MIT"}
