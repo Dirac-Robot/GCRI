@@ -73,6 +73,10 @@ class GCRICallbacks:
         """Called when the GCRI task fails with an error."""
         pass
 
+    def on_task_abort(self, error: Exception):
+        """Called when the GCRI task is aborted by user (explicit or KeyboardInterrupt)."""
+        pass
+
 
 class CLICallbacks(GCRICallbacks):
     """Callbacks for CLI/terminal usage with loguru logging and interactive prompts."""

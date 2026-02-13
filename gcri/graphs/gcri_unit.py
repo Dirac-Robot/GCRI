@@ -960,13 +960,19 @@ class GCRI:
                 result['final_output'] = 'Task aborted by user.'
             else:
                 result = {'final_output': 'Task aborted by user before first iteration completion.'}
+            self.callbacks.on_task_abort(e)
+            _aborted = True
         except Exception as e:
             self.callbacks.on_task_error(e)
+            _aborted = False
             raise
+        else:
+            _aborted = False
         finally:
             self.sandbox.clean_up()
             elapsed = time.time()-start_time
-            self.callbacks.on_task_complete(result, elapsed)
+            if not _aborted:
+                self.callbacks.on_task_complete(result, elapsed)
             logger.info(f'🧹 Sandbox clean-up completed.')
             logger.info(f'⏱️ Total elapsed time: {elapsed:.2f}s ({elapsed/60:.1f}min)')
         return result
