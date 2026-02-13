@@ -353,7 +353,7 @@ class GCRI:
             h = hyp.model_dump() if hasattr(hyp, 'model_dump') else hyp
             self.callbacks.on_hypothesis_generated(
                 state.count, h.get('index', 0),
-                str(h.get('hypothesis', ''))[:200],
+                str(h.get('hypothesis', '')),
                 h.get('strategy_name', '')
             )
         return result
@@ -933,11 +933,6 @@ class GCRI:
                     self.callbacks.on_iteration_complete(index, result)
                     if result['decision']:
                         self._handle_iteration_success(result, index, commit_mode)
-                        if self._external_memory and memory.active_constraints:
-                            self._external_memory.save(
-                                memory.active_constraints,
-                                domain=getattr(self.config, 'task_domain', None)
-                            )
                         break
                     else:
                         memory = TypeAdapter(StructuredMemory).validate_python(result['memory'])

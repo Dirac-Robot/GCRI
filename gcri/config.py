@@ -91,22 +91,12 @@ def default(config):
     )
     config.project_dir = os.path.abspath(os.getcwd())
     config.run_dir = os.path.join(config.project_dir, '.gcri')
-    config.dashboard = dict(
-        enabled=True,
-        host='127.0.0.1',
-        port=8000,
-        monitor_directories=[]  # User can override this with paths to watch
-    )
     config.sandbox = dict(
         image='python:3.11-slim',
         timeout=60,
         memory_limit='512m',
         cpu_limit=1.0,
         network_mode='none'
-    )
-    config.external_memory = dict(
-        enabled=True,
-        path=None  # Will be set lazily based on run_dir
     )
     config.num_branches = 2
     config.branches_generator_type = 'default'  # 'default', 'deep', 'shallow'
@@ -144,8 +134,7 @@ def default(config):
             active_memory=get_template_path('active_memory.txt', config.template_version),
             sandbox_curator=get_template_path('sandbox_curator.txt', config.template_version),
             global_rules=get_template_path('global_rules.txt', config.template_version),
-            aggregator=get_template_path('aggregator.txt', config.template_version),
-            external_memory_update=get_template_path('external_memory_update.txt', config.template_version)
+            aggregator=get_template_path('aggregator.txt', config.template_version)
         )
 
 

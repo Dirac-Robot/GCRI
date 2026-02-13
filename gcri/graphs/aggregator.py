@@ -99,9 +99,7 @@ class HypothesisAggregator:
             if files_info:
                 file_details = []
                 for path, content in files_info.items():
-                    # Truncate very long files
-                    truncated = content[:5000] + '...(truncated)' if len(content) > 5000 else content
-                    file_details.append(f'  📄 {path}:\n```\n{truncated}\n```')
+                    file_details.append(f'  📄 {path}:\n```\n{content}\n```')
                 files_section = '\nFiles Modified:\n' + '\n'.join(file_details)
 
             hypotheses_text.append(
@@ -242,8 +240,7 @@ class HypothesisAggregator:
             for idx, files in source_files.items():
                 if path in files:
                     content = files[path]
-                    truncated = content[:3000] + '...(truncated)' if len(content) > 3000 else content
-                    versions.append(f'### Branch {idx} version:\n```\n{truncated}\n```')
+                    versions.append(f'### Branch {idx} version:\n```\n{content}\n```')
 
             if len(versions) > 1:
                 conflict_details.append(f'## File: {path}\n' + '\n'.join(versions))

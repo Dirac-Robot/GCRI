@@ -65,11 +65,6 @@ dependencies = [
     "urllib3>=2.5.0",
     "xxhash>=3.6.0",
     "zstandard>=0.25.0",
-    "datasets",
-    "inspect-ai>=0.3.38",
-    "fastapi",
-    "uvicorn",
-    "inspect-evals>=0.3.104",
 ]
 
 [project.optional-dependencies]
@@ -101,7 +96,4 @@ where = ["."]
 gcri = "gcri.entry:main_entry"
 
 [tool.setuptools.package-data]
-"gcri" = ["templates/**/*", "dashboard/frontend/dist/**/*"]
-
-[project.entry-points.inspect_ai]
-gcri = "gcri.benchmark.model_provider"
+"gcri" = ["templates/**/*"]

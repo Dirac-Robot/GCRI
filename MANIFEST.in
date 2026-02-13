@@ -1,3 +1,2 @@
-recursive-include gcri/dashboard/frontend/dist *
 recursive-include gcri/templates *
 include README.md

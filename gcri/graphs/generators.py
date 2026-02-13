@@ -836,7 +836,7 @@ class MinimalThinkGenerator(BaseBranchesGenerator):
             ui_event='node_update',
             node='hypothesis',
             branch=index,
-            data={'hypothesis': result.hypothesis[:200], 'container_id': container_id}
+            data={'hypothesis': result.hypothesis, 'container_id': container_id}
         ).info(f'[MinimalThink] Iter #{count+1} | Branch[{index}] Done: {result.hypothesis[:80]}...')
 
         return raw_hyp
