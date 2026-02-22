@@ -208,121 +208,6 @@ def search_web(query: str) -> str:
         return f'Search Error: {e}'
 
 
-
-# CoMeT in-session memory (shared across all branches/threads)
-_comet_instance = None
-_comet_ingest_count = 0
-
-
-def set_comet_instance(comet):
-    """Set the shared CoMeT instance for in-session memory tools."""
-    global _comet_instance, _comet_ingest_count
-    _comet_instance = comet
-    _comet_ingest_count = 0
-
-
-def get_comet_instance():
-    """Get the shared CoMeT instance."""
-    return _comet_instance
-
-
-@tool
-def ingest_to_memory(content: str, source: str = '') -> str:
-    """Ingest long content (web search results, file contents, etc.) into
-    compressed in-session memory for later retrieval.
-    Use this when tool results are too long to keep in conversation context.
-
-    Args:
-        content: The full text content to compress and store.
-        source: Source identifier (e.g. URL, file path) for traceability.
-
-    Returns:
-        Summary of how many memory nodes were created.
-    """
-    comet = _comet_instance
-    if comet is None:
-        return 'Error: In-session memory (CoMeT) not available.'
-    nodes = comet.add_document(content, source=source)
-    if not nodes:
-        return 'No content was stored (empty input).'
-    summaries = [f'- [{n.node_id}] {n.summary}' for n in nodes]
-    return f'Stored {len(nodes)} memory nodes:\n' + '\n'.join(summaries)
-
-
-@tool
-def retrieve_from_memory(query: str) -> str:
-    """Search in-session memory and return compressed summaries (Tier 1).
-    ALWAYS use this FIRST. Returns lightweight metadata per match.
-    If a summary is too short, use read_detailed_summary for more detail.
-    Only use read_raw_memory as a last resort for exact quotes or full data.
-
-    Args:
-        query: What information you need to recall.
-
-    Returns:
-        Relevant memory summaries with node IDs for deeper reading.
-    """
-    comet = _comet_instance
-    if comet is None:
-        return 'Error: In-session memory (CoMeT) not available.'
-    results = comet.retrieve(query)
-    if not results:
-        context = comet.get_context_window()
-        if context.strip():
-            return f'No retrieval results. Current memory context:\n{context}'
-        return 'No memories found for this query.'
-    parts = []
-    for r in results:
-        parts.append(f'[{r.node.node_id}] (score={r.relevance_score:.2f}) {r.node.summary}\nTrigger: {r.node.trigger}')
-    return '\n---\n'.join(parts)
-
-
-@tool
-def read_detailed_summary(node_id: str) -> str:
-    """Read a detailed summary of a memory node (Tier 2).
-    Use when short summary from retrieve_from_memory is insufficient but you
-    don't need the full raw content. Generated on first request, then cached.
-    Cheaper and faster than read_raw_memory.
-
-    Args:
-        node_id: Memory node ID (starts with 'mem_') from prior retrieval.
-
-    Returns:
-        Detailed summary (3-8 sentences with key facts and specifics).
-    """
-    comet = _comet_instance
-    if comet is None:
-        return 'Error: In-session memory (CoMeT) not available.'
-    detailed = comet.get_detailed_summary(node_id)
-    if detailed is None:
-        return f'No node found for {node_id}.'
-    return detailed
-
-
-@tool
-def read_raw_memory(node_id: str) -> str:
-    """Read the FULL original content of a memory node (Tier 3). EXPENSIVE.
-    Only use when you need exact quotes, code, or complete data that
-    even the detailed summary cannot provide.
-    Get node_ids from retrieve_from_memory results first.
-
-    Args:
-        node_id: Memory node ID (starts with 'mem_') from prior retrieval.
-
-    Returns:
-        Full original content, or error message if not found.
-    """
-    comet = _comet_instance
-    if comet is None:
-        return 'Error: In-session memory (CoMeT) not available.'
-    raw = comet.get_raw_content(node_id)
-    if raw is None:
-        return f'No raw content found for node {node_id}.'
-    return raw
-
-
-COMET_TOOLS = [ingest_to_memory, retrieve_from_memory, read_detailed_summary, read_raw_memory]
-
 class BranchContainerRegistry:
     """Registry for branch container IDs."""
     _containers = {}
@@ -643,38 +528,7 @@ class RecursiveToolAgent(Runnable):
                             except Exception as e:
                                 output = f'Tool Error: {e}'
                         output_str = str(output)
-                        # Auto-ingest long tool outputs into CoMeT (all background)
-                        # Rolling window: first 2 stay raw forever, 3rd+ get deferred replacement
-                        # when ingestion completes (next iteration sees compressed reference)
-                        comet = _comet_instance
-                        if comet and len(output_str) > 1000 and name not in ('retrieve_from_memory',):
-                            global _comet_ingest_count
-                            _comet_ingest_count += 1
-                            try:
-                                source = f'tool:{name}'
-                                char_count = len(output_str)
-                                tool_msg = ToolMessage(content=output_str, tool_call_id=call_id, name=name)
-                                if _comet_ingest_count <= 2:
-                                    def _on_ingested(nodes, _src=source, _n=char_count):
-                                        if nodes:
-                                            logger.info(f'☄️ Auto-ingested {_src} output ({_n} chars) -> {len(nodes)} nodes')
-                                    comet.add_document(output_str, source=source, background=True, on_complete=_on_ingested)
-                                else:
-                                    def _on_ingested_replace(nodes, _msg=tool_msg, _src=source, _n=char_count):
-                                        if nodes:
-                                            node_summaries = '; '.join(n.summary[:80] for n in nodes[:3])
-                                            _msg.content = (
-                                                f'[Content compressed into {len(nodes)} memory node(s): {node_summaries}]\n'
-                                                f'Use retrieve_from_memory(query) to recall specific details.'
-                                            )
-                                            logger.info(f'☄️ Auto-ingested {_src} output ({_n} chars) -> {len(nodes)} nodes (deferred replace)')
-                                    comet.add_document(output_str, source=source, background=True, on_complete=_on_ingested_replace)
-                                outputs.append(tool_msg)
-                            except Exception as e:
-                                logger.warning(f'⚠️ CoMeT auto-ingest failed for {name}: {e}')
-                                outputs.append(ToolMessage(content=output_str, tool_call_id=call_id, name=name))
-                        else:
-                            outputs.append(ToolMessage(content=output_str, tool_call_id=call_id, name=name))
+                        outputs.append(ToolMessage(content=output_str, tool_call_id=call_id, name=name))
                 messages.extend(outputs)
                 recursion_count += 1
                 if self.max_recursion_depth is not None and recursion_count >= self.max_recursion_depth:
@@ -718,16 +572,13 @@ def build_model(model_id, gcri_options=None, container_id=None, **parameters):
     if gcri_options is not None:
         use_code_tools = gcri_options.get('use_code_tools', False)
         use_web_search = gcri_options.get('use_web_search', False)
-        use_comet = gcri_options.get('use_comet', False)
         max_recursion_depth = gcri_options.get('max_recursion_depth', 50)
     else:
         use_code_tools = False
         use_web_search = False
-        use_comet = False
         max_recursion_depth = 50
     tools = CLI_TOOLS if use_code_tools else []
     tools += [search_web] if use_web_search else []
-    tools += COMET_TOOLS if use_comet else []
     return CodeAgentBuilder(
         model_id,
         tools=tools,

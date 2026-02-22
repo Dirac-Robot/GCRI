@@ -72,10 +72,6 @@ class GCRI:
         self.abort_event = abort_event
         self.callbacks = callbacks or CLICallbacks()
 
-        # Initialize CoMeT as unified memory (in-session + persistent)
-        self._comet = None
-        if getattr(config, 'use_comet', False):
-            self._init_comet(config)
         with open(config.templates.global_rules, 'r') as f:
             self.global_rules = f.read()
 
@@ -153,49 +149,6 @@ class GCRI:
         self._graph = graph
         self._workflow = graph.compile()
         logger.info('✅ GCRI Instance Initialized (BranchesGenerator Architecture)')
-
-    def _init_comet(self, config):
-        """Initialize CoMeT as unified persistent memory.
-
-        Uses persistent path ({run_dir}/comet_store/) so knowledge
-        accumulates across tasks. Each task = 1 CoMeT session.
-        In-loop: compression/key-mapping (session-scoped)
-        Out-loop: persistent storage + cross-session retrieval
-        """
-        from gcri.tools.cli import set_comet_instance
-        try:
-            from comet.orchestrator import CoMeT
-            from ato.adict import ADict
-
-            comet_dir = os.path.join(config.run_dir, 'comet_store')
-            os.makedirs(comet_dir, exist_ok=True)
-            comet_config = ADict(
-                slm_model='gpt-4o-mini',
-                main_model='gpt-4o',
-                compacting=ADict(load_threshold=4, max_l1_buffer=10),
-                storage=ADict(
-                    type='json',
-                    base_path=os.path.join(comet_dir, 'store'),
-                    raw_path=os.path.join(comet_dir, 'store', 'raw'),
-                ),
-                retrieval=ADict(
-                    embedding_model='text-embedding-3-small',
-                    vector_backend='chroma',
-                    vector_db_path=os.path.join(comet_dir, 'vectors'),
-                    fusion_alpha=0.5,
-                    rrf_k=5,
-                    raw_search_weight=0.2,
-                    top_k=5,
-                    rerank=False,
-                ),
-            )
-            self._comet = CoMeT(comet_config)
-            set_comet_instance(self._comet)
-            logger.info(f'☄️ CoMeT persistent memory enabled: {comet_dir}')
-        except ImportError:
-            logger.warning('⚠️ use_comet=True but comet package not installed. Skipping.')
-        except Exception as e:
-            logger.error(f'⚠️ Failed to initialize CoMeT: {e}')
 
     @property
     def graph(self):
@@ -698,10 +651,7 @@ class GCRI:
             try:
                 active_memory_template = active_memory_template.format(global_feedback=global_feedback)
                 active_memory_template = f'{self.global_rules}\n\n{active_memory_template}'
-                if self._comet:
-                    comet_ctx = self._comet.get_context_window()
-                    if comet_ctx.strip():
-                        active_memory_template += f'\n\n## In-Session Memory (CoMeT)\n{comet_ctx}'
+
                 memory_agent = self.memory_agent
                 active_memory = memory_agent.invoke(active_memory_template)
                 new_constraints = active_memory.new_active_constraints
@@ -842,17 +792,6 @@ class GCRI:
         logger.info(f'🏆 Winning Branch Identified: Branch #{best_branch_index+1}')
         logger.info(f'📂 Location: {winning_branch_path}')
 
-        # Ingest task result into CoMeT persistent memory
-        if self._comet:
-            self._ingest_task_result(result)
-
-        # Close CoMeT session (auto-consolidates)
-        if self._comet:
-            try:
-                self._comet.close_session()
-                logger.info('☄️ CoMeT session closed and consolidated.')
-            except Exception as e:
-                logger.warning(f'⚠️ CoMeT session close failed: {e}')
 
         commit_context = {
             'winning_branch_path': winning_branch_path,
@@ -869,21 +808,6 @@ class GCRI:
             logger.info('Changes discarded.')
         return True
 
-    def _ingest_task_result(self, result):
-        """Ingest successful task result into CoMeT persistent memory."""
-        try:
-            result_summary = result.get('final_output', str(result))
-            if result_summary:
-                self._comet.add_document(
-                    result_summary,
-                    source='gcri_task_result',
-                    background=True,
-                    on_complete=lambda nodes: logger.info(
-                        f'☄️ Task result ingested into CoMeT ({len(nodes)} nodes)'
-                    ) if True else None,
-                )
-        except Exception as e:
-            logger.warning(f'CoMeT task result ingestion failed: {e}')
 
 
     def __call__(self, task, initial_memory=None, commit_mode='manual'):
@@ -902,18 +826,7 @@ class GCRI:
             memory = initial_memory if initial_memory is not None else StructuredMemory()
             feedback = ''
             start_index = 0
-            # Retrieve task-relevant knowledge from CoMeT (cross-session)
-            if self._comet:
-                task_query = task if isinstance(task, str) else str(task)
-                try:
-                    self._comet.drain()
-                    results = self._comet.retrieve(task_query, top_k=10)
-                    if results:
-                        for r in results:
-                            memory.active_constraints.append(r.node.summary)
-                        logger.info(f'☄️ Retrieved {len(results)} relevant memories from CoMeT')
-                except Exception as e:
-                    logger.warning(f'⚠️ CoMeT cross-session retrieval failed: {e}')
+
         try:
             for index in range(start_index, self.config.protocols.max_iterations):
                 logger.info('=' * 60)
