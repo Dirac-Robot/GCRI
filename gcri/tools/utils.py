@@ -83,23 +83,11 @@ class SandboxManager:
         self.docker_sandbox.clean_up_container(container_id)
 
     def setup_verification_branches(self, iteration_count, aggregated_branches, source_containers):
-        """
-        Setup containers for verification branches after aggregation.
-
-        Args:
-            iteration_count: Current iteration index.
-            aggregated_branches: List of AggregatedBranch from aggregator.
-            source_containers: Dict mapping original branch index to container ID.
-
-        Returns:
-            Dict mapping verification branch index to container ID.
-        """
         verification_containers = {}
         used_source_containers = set()
 
         for branch in aggregated_branches:
             if len(branch.source_indices) == 1:
-                # Single source: reuse existing container
                 src_idx = branch.source_indices[0]
                 src_container = source_containers.get(src_idx)
                 if src_container:
@@ -111,7 +99,6 @@ class SandboxManager:
                 else:
                     logger.warning(f'Source container for branch {src_idx} not found')
             else:
-                # Multiple sources: create merged container
                 containers_to_merge = []
                 for src_idx in branch.source_indices:
                     src_container = source_containers.get(src_idx)
@@ -130,7 +117,6 @@ class SandboxManager:
                         )
                     except Exception as e:
                         logger.error(f'Failed to merge containers for branch {branch.index}: {e}')
-                        # Fallback to first source
                         if containers_to_merge:
                             verification_containers[branch.index] = containers_to_merge[0]
                 else:
@@ -141,28 +127,16 @@ class SandboxManager:
             if src_idx not in used_source_containers:
                 logger.debug(f'🗑️ Cleaning up discarded branch {src_idx} container')
                 self.docker_sandbox.clean_up_container(container_id)
-                # Remove from tracking
                 key = (iteration_count, src_idx)
                 if key in self._branch_containers:
                     del self._branch_containers[key]
 
-        # Store verification containers with a different prefix to avoid conflicts
         for v_idx, container_id in verification_containers.items():
             self._branch_containers[(iteration_count, f'v_{v_idx}')] = container_id
 
         return verification_containers
 
     def get_verification_context(self, iteration_count, aggregated_branches):
-        """
-        Get file context for verification branches.
-
-        Args:
-            iteration_count: Current iteration index.
-            aggregated_branches: List of AggregatedBranch.
-
-        Returns:
-            Formatted string with container information.
-        """
         file_contexts = []
         for branch in aggregated_branches:
             container_id = self._branch_containers.get((iteration_count, f'v_{branch.index}'))
@@ -184,15 +158,6 @@ class SandboxManager:
         self._branch_containers.clear()
 
     def get_branch_files(self, iteration_count: int) -> dict:
-        """
-        Get files created/modified by each branch in this iteration.
-
-        Args:
-            iteration_count: Current iteration index.
-
-        Returns:
-            Dict mapping branch_index to dict of {file_path: content}.
-        """
         branch_files = {}
         for (iter_idx, branch_idx), container_id in self._branch_containers.items():
             if iter_idx != iteration_count:
@@ -206,16 +171,6 @@ class SandboxManager:
         return branch_files
 
     def create_base_sandbox(self, source_indices: list, iteration_count: int) -> tuple:
-        """
-        Create merged base sandbox from selected branches.
-
-        Args:
-            source_indices: List of branch indices to merge.
-            iteration_count: Current iteration index.
-
-        Returns:
-            Tuple of (container_id, file_summary_string).
-        """
         if not source_indices:
             logger.warning('No source indices provided for base sandbox.')
             return None, ''
@@ -232,7 +187,6 @@ class SandboxManager:
 
         try:
             if len(source_containers) == 1:
-                # Single source: clone it to preserve for next iteration
                 base_container = self.docker_sandbox.clone_container(
                     source_containers[0], iteration_count+1, 'base'
                 )
@@ -241,7 +195,6 @@ class SandboxManager:
                     source_containers, self.project_dir
                 )
 
-            # Collect file summary
             files = self.docker_sandbox.get_container_files(base_container)
             file_list = list(files.keys()) if files else []
             summary = f'{len(file_list)} files from branches {source_indices}'
@@ -258,17 +211,6 @@ class SandboxManager:
             return None, ''
 
     def setup_branch_from_base(self, iteration_count: int, branch_index: int, base_container_id: str) -> str:
-        """
-        Setup branch by cloning base sandbox instead of project_dir.
-
-        Args:
-            iteration_count: Current iteration index.
-            branch_index: Branch index.
-            base_container_id: Container ID to clone from.
-
-        Returns:
-            New container ID for this branch.
-        """
         try:
             container_id = self.docker_sandbox.clone_container(
                 base_container_id, iteration_count, branch_index

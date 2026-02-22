@@ -30,7 +30,7 @@ def default(config):
     config.agents.planner = dict(
         model_id='gpt-5.2',
         parameters=ADict(
-            max_completion_tokens=16384
+            max_completion_tokens=32768
         ),
         gcri_options=ADict(
             use_web_search=True
@@ -39,13 +39,13 @@ def default(config):
     config.agents.compression = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_completion_tokens=16384
+            max_completion_tokens=32768
         )
     )
     config.agents.strategy_generator = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_completion_tokens=16384
+            max_completion_tokens=32768
         ),
         gcri_options=ADict(
             use_web_search=True
@@ -54,7 +54,7 @@ def default(config):
     config.agents.decision = ADict(
         model_id='gpt-5.2',
         parameters=ADict(
-            max_completion_tokens=16384
+            max_completion_tokens=32768
         ),
         gcri_options=ADict(
             use_code_tools=True,
@@ -65,7 +65,7 @@ def default(config):
     config.agents.memory = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_completion_tokens=16384
+            max_completion_tokens=32768
         ),
         gcri_options=ADict(
             use_code_tools=True,
@@ -76,7 +76,7 @@ def default(config):
     config.agents.aggregator = dict(
         model_id='gpt-5-mini',
         parameters=ADict(
-            max_completion_tokens=16384
+            max_completion_tokens=32768
         )
     )
     config.template_version = 'v0.1.1'
@@ -110,7 +110,7 @@ def default(config):
                 agent_name: ADict(
                     model_id='gpt-5-mini',
                     parameters=dict(
-                        max_completion_tokens=16384
+                        max_completion_tokens=32768
                     ),
                     gcri_options=ADict(
                         use_code_tools=True,
@@ -152,86 +152,23 @@ def apply_custom_config(config):
 
 @scope.observe()
 def no_reasoning(config):
-    config.agents.planner = dict(
-        model_id='gpt-4.1',
-        parameters=ADict(
-            max_tokens=25600
-        ),
-        gcri_options=ADict(
-            use_code_tools=True,
-            use_web_search=True,
-            max_recursion_depth=None
-        )
-    )
-    config.agents.compression = dict(
-        model_id='gpt-4.1-mini',
-        parameters=ADict(
-            max_tokens=25600
-        ),
-        gcri_options=ADict(
-            use_code_tools=True,
-            use_web_search=True,
-            max_recursion_depth=None
-        )
-    )
-    config.agents.strategy_generator = dict(
-        model_id='gpt-4.1-mini',
-        parameters=ADict(
-            max_tokens=25600
-        ),
-        gcri_options=ADict(
-            use_code_tools=True,
-            use_web_search=True,
-            max_recursion_depth=None
-        )
-    )
-    config.agents.aggregator = dict(
-        model_id='gpt-4.1',
-        parameters=ADict(
-            max_tokens=25600
-        ),
-        gcri_options=ADict(
-            use_code_tools=True,
-            use_web_search=True,
-            max_recursion_depth=None
-        )
-    )
-    config.agents.decision = ADict(
-        model_id='gpt-4.1',
-        parameters=ADict(
-            max_tokens=25600
-        ),
-        gcri_options=ADict(
-            use_code_tools=True,
-            use_web_search=True,
-            max_recursion_depth=None
-        )
-    )
-    config.agents.memory = dict(
-        model_id='gpt-4.1-mini',
-        parameters=ADict(
-            max_tokens=25600
-        ),
-        gcri_options=ADict(
-            use_code_tools=True,
-            use_web_search=True,
-            max_recursion_depth=None
-        )
-    )
+    _params = ADict(max_tokens=25600)
+    _opts = ADict(use_code_tools=True, use_web_search=True, max_recursion_depth=None)
+
+    def _agent(model_id):
+        return dict(model_id=model_id, parameters=_params, gcri_options=_opts)
+
+    config.agents.planner = _agent('gpt-4.1')
+    config.agents.compression = _agent('gpt-4.1-mini')
+    config.agents.strategy_generator = _agent('gpt-4.1-mini')
+    config.agents.aggregator = _agent('gpt-4.1')
+    config.agents.decision = ADict(**_agent('gpt-4.1'))
+    config.agents.memory = _agent('gpt-4.1-mini')
 
     with scope.lazy():
         config.agents.branches = [
             {
-                agent_name: ADict(
-                    model_id='gpt-4.1-mini',
-                    parameters=dict(
-                        max_tokens=25600
-                    ),
-                    gcri_options=ADict(
-                        use_code_tools=True,
-                        use_web_search=True,
-                        max_recursion_depth=None
-                    )
-                ) for agent_name in AGENT_NAMES_IN_BRANCH
+                agent_name: ADict(**_agent('gpt-4.1-mini'))
+                for agent_name in AGENT_NAMES_IN_BRANCH
             } for _ in range(config.num_branches)
         ]

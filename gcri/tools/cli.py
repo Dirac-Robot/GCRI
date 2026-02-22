@@ -15,14 +15,9 @@ from langchain_core.runnables.utils import Input
 from langchain_core.tools import tool
 from loguru import logger
 from pydantic import BaseModel
-from rich.console import Console
-from rich.panel import Panel
-from rich.syntax import Syntax
 
 from gcri.config import scope
 from gcri.tools.docker_sandbox import get_sandbox
-
-console = Console(force_terminal=True)
 
 
 class GlobalVariables:
@@ -40,14 +35,9 @@ def set_global_variables(config):
 
 
 def get_cached_sandbox():
-    """Get cached sandbox instance for cli tools."""
     if GlobalVariables.SANDBOX is None:
         GlobalVariables.SANDBOX = get_sandbox(GlobalVariables.CONFIG or scope.config)
     return GlobalVariables.SANDBOX
-
-
-
-
 
 def get_input(message):
     logger.info(message)
@@ -59,7 +49,6 @@ def get_container_id():
 
 
 def _to_container_path(file_path: str) -> str:
-    """Translate host absolute paths to container /workspace/ paths."""
     config = GlobalVariables.CONFIG
     if config and hasattr(config, 'project_dir') and config.project_dir:
         project_dir = config.project_dir.rstrip('/')
@@ -329,7 +318,6 @@ class SecurityPolicy:
 
 
 class InteractiveToolGuard:
-    """CLI-specific tool execution guard with user interaction."""
     _io_lock = threading.Lock()
 
     def __init__(self):
@@ -362,80 +350,27 @@ class InteractiveToolGuard:
                 except OSError:
                     pass
 
+    def _execute(self, name, args):
+        try:
+            result = self.tools[name].invoke(args)
+            logger.debug(f'Result: {str(result)[:100]}...')
+            return str(result)
+        except Exception as e:
+            return f'Tool Error: {e}'
 
     def invoke(self, name, args, task_id):
         with self._io_lock:
             container_id = GlobalVariables.CONTAINER_VAR.get()
             container_display = container_id[:12] if container_id else 'None'
-            console.print(
-                Panel(f'Agent Request: [bold cyan]{name}[/]\nContainer: [dim]{container_display}[/]', border_style='blue')
-            )
+            logger.info(f'Tool: {name} | Container: {container_display}')
             if 'code' in args:
-                console.print(Syntax(args['code'], 'python', theme='monokai', line_numbers=True))
+                logger.debug(f'Code:\n{args["code"]}')
             elif 'command' in args:
-                console.print(Syntax(args['command'], 'bash', theme='monokai'))
+                logger.debug(f'Command: {args["command"]}')
             else:
-                console.print(str(args))
-            is_sensitive, reason = self._policy.is_sensitive(name, args)
-            # Docker provides isolation, so we can auto-execute more freely
-            is_safe_sandbox_op = True
-            if is_safe_sandbox_op or (self.auto_mode and not is_sensitive):
-                console.print(f'[bold green]⚡ Auto-Executing in Docker (Task {task_id})[/]')
-                try:
-                    result = self.tools[name].invoke(args)
-                    console.print(f'[dim]Result: {str(result)[:100]}...[/]')
-                    return str(result)
-                except Exception as e:
-                    return f'Tool Error: {e}'
-            while True:
-                console.print('[bold yellow]>> (y)es / (a)lways / (n)o / (e)dit : [/]', end='')
-                sys.stdout.flush()
-                choice = input().strip().lower()
-                if choice == 'y':
-                    console.print(f'[dim]Executing Task {task_id}...[/]')
-                    try:
-                        result = self.tools[name].invoke(args)
-                        console.print('[bold green]Done.[/]')
-                        return str(result)
-                    except Exception as e:
-                        return f'Tool Error: {e}'
-                elif choice == 'a':
-                    console.print('[bold green]⚡ Auto-Mode Enabled.[/]')
-                    self.auto_mode = True
-                    try:
-                        result = self.tools[name].invoke(args)
-                        console.print('[bold green]Done.[/]')
-                        return str(result)
-                    except Exception as e:
-                        return f'Tool Error: {e}'
-                elif choice == 'n':
-                    console.print('[bold red]Denied.[/]')
-                    return 'User denied execution.'
-                elif choice == 'e':
-                    console.print('[bold magenta]Manual Override (Type "EOF" to finish)[/]')
-                    lines = []
-                    while True:
-                        line = input()
-                        if line.strip() == 'EOF':
-                            break
-                        lines.append(line)
-                    new_value = '\n'.join(lines)
-                    if not new_value.strip():
-                        console.print('No input provided.')
-                        continue
-                    if name == 'execute_shell_command':
-                        args['command'] = new_value
-                    elif name == 'write_file':
-                        args['content'] = new_value
-                    elif name == 'local_python_interpreter':
-                        args['code'] = new_value
-                    console.print('[dim]Executing modified...[/]')
-                    try:
-                        result = self.tools[name].invoke(args)
-                        console.print('[bold green]Done.[/]')
-                        return str(result)
-                    except Exception as e:
-                        return f'Tool Error: {e}'
+                logger.debug(str(args))
+            logger.info(f'⚡ Auto-Executing in Docker (Task {task_id})')
+            return self._execute(name, args)
 
 
 SHARED_GUARD = None
@@ -568,39 +503,29 @@ class CodeAgentBuilder:
         return self.agent.invoke(*args, **kwargs)
 
 
+def _parse_gcri_options(gcri_options):
+    if gcri_options is None:
+        return False, False, 50
+    return (
+        gcri_options.get('use_code_tools', False),
+        gcri_options.get('use_web_search', False),
+        gcri_options.get('max_recursion_depth', 50),
+    )
+
+
 def build_model(model_id, gcri_options=None, container_id=None, **parameters):
-    if gcri_options is not None:
-        use_code_tools = gcri_options.get('use_code_tools', False)
-        use_web_search = gcri_options.get('use_web_search', False)
-        max_recursion_depth = gcri_options.get('max_recursion_depth', 50)
-    else:
-        use_code_tools = False
-        use_web_search = False
-        max_recursion_depth = 50
-    tools = CLI_TOOLS if use_code_tools else []
-    tools += [search_web] if use_web_search else []
+    use_code_tools, use_web_search, max_recursion_depth = _parse_gcri_options(gcri_options)
+    tools = (CLI_TOOLS if use_code_tools else [])+([search_web] if use_web_search else [])
     return CodeAgentBuilder(
-        model_id,
-        tools=tools,
-        container_id=container_id,
-        max_recursion_depth=max_recursion_depth,
-        **parameters
+        model_id, tools=tools, container_id=container_id,
+        max_recursion_depth=max_recursion_depth, **parameters
     )
 
 
 def build_decision_model(model_id, gcri_options=None, **parameters):
-    """Model builder for Decision agent. Uses DECISION_TOOLS when use_code_tools=True."""
-    if gcri_options is not None:
-        use_code_tools = gcri_options.get('use_code_tools', False)
-        max_recursion_depth = gcri_options.get('max_recursion_depth', 50)
-    else:
-        use_code_tools = False
-        max_recursion_depth = 50
+    use_code_tools, _, max_recursion_depth = _parse_gcri_options(gcri_options)
     tools = DECISION_TOOLS if use_code_tools else []
     return CodeAgentBuilder(
-        model_id,
-        tools=tools,
-        container_id=None,
-        max_recursion_depth=max_recursion_depth,
-        **parameters
+        model_id, tools=tools, container_id=None,
+        max_recursion_depth=max_recursion_depth, **parameters
     )

@@ -37,32 +37,8 @@ class TaskAbortedError(Exception):
 
 
 class GCRI:
-    """
-    Graph-based Collective Reasoning Interface.
-
-    GCRI is a multi-branch reasoning system that generates hypotheses,
-    refines them through reasoning, and verifies them against counterexamples.
-    It uses a LangGraph-based workflow to orchestrate parallel branch execution
-    and collective decision-making.
-
-    Attributes:
-        config: Configuration object containing model settings, templates, and protocols.
-        schema: Optional Pydantic schema for structured output validation.
-        sandbox: SandboxManager for isolated file system operations per branch.
-        abort_event: Optional threading.Event to signal task abortion.
-        callbacks: GCRICallbacks instance for environment-specific behavior (CLI, Web, etc.).
-    """
 
     def __init__(self, config, schema=None, abort_event=None, callbacks=None):
-        """
-        Initialize GCRI with configuration and optional parameters.
-
-        Args:
-            config: Configuration object with model IDs, templates, and protocol settings.
-            schema: Optional Pydantic BaseModel for structured final output.
-            abort_event: Optional threading.Event for cooperative task cancellation.
-            callbacks: Optional GCRICallbacks instance. Defaults to CLICallbacks.
-        """
         self.config = config
         set_global_variables()
         from gcri.tools.cli import GlobalVariables
@@ -159,7 +135,6 @@ class GCRI:
         return self._workflow
 
     def map_hypothesis_branches(self, state: TaskState):
-        """Map strategies to parallel hypothesis generation branches."""
         logger.bind(ui_event='phase_change', phase='hypothesis_generation').info(
             'Starting Hypothesis Generation...'
         )
@@ -187,16 +162,13 @@ class GCRI:
         return sends
 
     def aggregate_hypotheses(self, state: TaskState):
-        """Aggregate raw hypotheses using HypothesisAggregator."""
         self.callbacks.on_phase_change('aggregation', iteration=state.count)
         logger.bind(ui_event='phase_change', phase='aggregation').info(
             'Starting Hypothesis Aggregation...'
         )
-
-        # Build source container map
-        source_containers = {}
-        for hyp in state.raw_hypotheses:
-            source_containers[hyp.index] = hyp.container_id
+        source_containers = {
+            hyp.index: hyp.container_id for hyp in state.raw_hypotheses
+        }
 
         # Use aggregator to combine/filter hypotheses (with intelligent file merging)
         aggregation_result = self.aggregator.aggregate(state, source_containers)
@@ -215,14 +187,12 @@ class GCRI:
                 if hyp.container_id:
                     logger.debug(f'🗑️ Cleaning up discarded branch {hyp.index} container')
                     self.sandbox.docker_sandbox.clean_up_container(hyp.container_id)
-
         return {
             'aggregated_branches': aggregation_result.branches,
             'verification_container_map': verification_containers
         }
 
     def map_verification_branches(self, state: TaskState):
-        """Map aggregated branches to parallel verification branches."""
         self.callbacks.on_phase_change('verification', iteration=state.count)
         logger.bind(ui_event='phase_change', phase='verification').info(
             'Starting Verification...'
@@ -254,7 +224,6 @@ class GCRI:
         return sends
 
     def collect_verification(self, state: TaskState):
-        """Collect verification results and prepare for decision."""
         aggregated_results = []
         targets = self.config.protocols.aggregate_targets
         accepted_count = 0
@@ -272,27 +241,7 @@ class GCRI:
         logger.info(f'📊 Verification: {accepted_count} accepted, {rejected_count} rejected (strong counter)')
         return {'aggregated_result': aggregated_results}
 
-    # Legacy method name for backward compatibility
-    def map_branches(self, state: TaskState):
-        """Legacy method - redirects to map_hypothesis_branches."""
-        return self.map_hypothesis_branches(state)
-
-    def aggregate(self, state: TaskState):
-        """Legacy method - redirects to collect_verification."""
-        return self.collect_verification(state)
-
     def generate_branches(self, state: TaskState):
-        """Execute the configured BranchesGenerator to produce raw hypotheses.
-
-        This is the main entry point for hypothesis generation. The generator
-        is selected based on config.branches_generator_type.
-
-        Args:
-            state: TaskState with task and feedback.
-
-        Returns:
-            dict: Contains 'strategies', 'raw_hypotheses', and related metadata.
-        """
         self._check_abort()
         self.callbacks.on_phase_change('strategy', iteration=state.count)
         logger.info(f'Iter #{state.count+1} | Generating branches via {type(self._branches_generator).__name__}...')
@@ -312,19 +261,16 @@ class GCRI:
         return result
 
     def _check_abort(self):
-        """Check if abort has been requested and raise TaskAbortedError if so."""
         if self.abort_event is not None and self.abort_event.is_set():
             logger.warning('🛑 Abort detected. Stopping execution.')
             raise TaskAbortedError('Task aborted by user.')
 
     def _load_template_with_rules(self, template_path, **format_kwargs):
-        """Load template file, format with kwargs, and prepend global rules."""
         with open(template_path, 'r') as f:
             template = f.read().format(**format_kwargs)
         return f'{self.global_rules}\n\n{template}'
 
     def _invoke_with_retry(self, agent, template, error_context='agent'):
-        """Invoke agent with retry logic up to max_tries_per_agent times."""
         for _ in range(self.config.protocols.max_tries_per_agent):
             result = agent.invoke(template)
             if result is not None:
@@ -342,110 +288,73 @@ class GCRI:
     def memory_agent(self):
         return self._memory_agent
 
-    def verify(self, state: BranchState):
-        """
-        Verify the refined hypothesis by attempting to find counterexamples.
-
-        The verification agent critically examines the hypothesis and attempts
-        to construct counterexamples that would invalidate it. The strength of
-        counterexamples determines whether the hypothesis is accepted.
-
-        Args:
-            state: BranchState with refined hypothesis to verify.
-
-        Returns:
-            dict: Contains 'results' list with HypothesisResult including
-                  counterexample and strength assessment.
-        """
+    def _run_verification(self, state, container_id, branch_index, strategy, reasoning, hypothesis, intent_analysis, source_info=None):
         self._check_abort()
+        label = f'VerifyBranch[{branch_index}]' if source_info else f'Branch[{branch_index}]'
         logger.bind(
-            ui_event='node_update',
-            node='verification',
-            branch=state.index,
-            data={'type': 'processing'}
-        ).info(f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Verifying...')
-        container_id = state.container_id
-        verification_config = self.config.agents.branches[state.index].verification
+            ui_event='node_update', node='verification',
+            branch=branch_index, data={'type': 'processing'}
+        ).info(f'Iter #{state.count_in_branch+1} | {label} Verifying...')
+
+        branch_cfg_idx = min(branch_index, len(self.config.agents.branches)-1)
+        verification_config = self.config.agents.branches[branch_cfg_idx].verification
         agent = build_model(
             verification_config.model_id,
             verification_config.get('gcri_options'),
             container_id=container_id,
             **verification_config.parameters
         ).with_structured_output(schema=Verification)
+
         template = self._load_template_with_rules(
             self.config.templates.verification,
             task=state.task_in_branch,
-            strategy=state.strategy,
-            reasoning=state.reasoning,
-            hypothesis=state.hypothesis,
-            intent_analysis=state.intent_analysis_in_branch
+            strategy=strategy,
+            reasoning=reasoning,
+            hypothesis=hypothesis,
+            intent_analysis=intent_analysis
         )
         verification = self._invoke_with_retry(agent, template, 'Verification agent')
+
         result = HypothesisResult(
-            index=state.index,
-            strategy=state.strategy,
-            reasoning=state.reasoning,
-            hypothesis=state.hypothesis,
+            index=branch_index,
+            strategy=strategy,
+            reasoning=reasoning,
+            hypothesis=hypothesis,
             counter_reasoning=verification.reasoning,
             counter_example=verification.counter_example,
             counter_strength=verification.counter_strength,
             adjustment=verification.adjustment
         )
+
+        log_data = {
+            'counter_example': verification.counter_example,
+            'counter_strength': verification.counter_strength,
+            'container_id': container_id
+        }
+        if source_info:
+            log_data['source_branches'] = source_info
         logger.bind(
-            ui_event='node_update',
-            node='verification',
-            branch=state.index,
-            data={
-                'counter_example': verification.counter_example,
-                'counter_strength': verification.counter_strength,
-                'container_id': container_id
-            }
+            ui_event='node_update', node='verification',
+            branch=branch_index, data=log_data
         ).info(
-            f'Iter #{state.count_in_branch+1} | Branch[{state.index}] Verification: '
+            f'Iter #{state.count_in_branch+1} | {label} Verification: '
             f'{verification.counter_strength.upper()} counter'
         )
         self.callbacks.on_verification_complete(
-            state.count_in_branch, state.index,
+            state.count_in_branch, branch_index,
             verification.counter_strength, verification.counter_example
         )
         return {'results': [result]}
 
+    def verify(self, state: BranchState):
+        return self._run_verification(
+            state, state.container_id, state.index,
+            state.strategy, state.reasoning, state.hypothesis,
+            state.intent_analysis_in_branch
+        )
+
     def verify_aggregated(self, state: VerificationBranchState):
-        """
-        Verify an aggregated hypothesis by attempting to find counterexamples.
-
-        Similar to verify() but works with VerificationBranchState which contains
-        AggregatedBranch instead of Strategy.
-
-        Args:
-            state: VerificationBranchState with aggregated hypothesis to verify.
-
-        Returns:
-            dict: Contains 'results' list with HypothesisResult.
-        """
-        self._check_abort()
-        logger.bind(
-            ui_event='node_update',
-            node='verification',
-            branch=state.index,
-            data={'type': 'processing'}
-        ).info(f'Iter #{state.count_in_branch+1} | VerifyBranch[{state.index}] Verifying aggregated hypothesis...')
-
-        container_id = state.container_id
         branch = state.aggregated_branch
-
-        # Use first available verification config (or fallback to branch 0)
-        branch_idx = min(state.index, len(self.config.agents.branches)-1)
-        verification_config = self.config.agents.branches[branch_idx].verification
-
-        agent = build_model(
-            verification_config.model_id,
-            verification_config.get('gcri_options'),
-            container_id=container_id,
-            **verification_config.parameters
-        ).with_structured_output(schema=Verification)
-
-        # Build a pseudo-Strategy for template compatibility
         from gcri.graphs.schemas import Strategy
         pseudo_strategy = Strategy(
             name=f'Aggregated-{state.index}',
@@ -453,71 +362,18 @@ class GCRI:
             feedback_reflection='Aggregated from multiple branches',
             hints=[f'Source branches: {branch.source_indices}']
         )
-
-        template = self._load_template_with_rules(
-            self.config.templates.verification,
-            task=state.task_in_branch,
-            strategy=pseudo_strategy,
-            reasoning=branch.merge_reasoning,
-            hypothesis=branch.combined_hypothesis,
-            intent_analysis=state.intent_analysis_in_branch
+        return self._run_verification(
+            state, state.container_id, state.index,
+            pseudo_strategy, branch.merge_reasoning, branch.combined_hypothesis,
+            state.intent_analysis_in_branch,
+            source_info=branch.source_indices
         )
-        verification = self._invoke_with_retry(agent, template, 'Verification agent')
-
-        result = HypothesisResult(
-            index=state.index,
-            strategy=pseudo_strategy,
-            reasoning=branch.merge_reasoning,
-            hypothesis=branch.combined_hypothesis,
-            counter_reasoning=verification.reasoning,
-            counter_example=verification.counter_example,
-            counter_strength=verification.counter_strength,
-            adjustment=verification.adjustment
-        )
-
-        logger.bind(
-            ui_event='node_update',
-            node='verification',
-            branch=state.index,
-            data={
-                'counter_example': verification.counter_example,
-                'counter_strength': verification.counter_strength,
-                'container_id': container_id,
-                'source_branches': branch.source_indices
-            }
-        ).info(
-            f'Iter #{state.count_in_branch+1} | VerifyBranch[{state.index}] Verification: '
-            f'{verification.counter_strength.upper()} counter'
-        )
-        self.callbacks.on_verification_complete(
-            state.count_in_branch, state.index,
-            verification.counter_strength, verification.counter_example
-        )
-        return {'results': [result]}
 
     @classmethod
     def _get_failure_category_description(cls):
-        descriptions = []
-        for code in FailureCategory:
-            descriptions.append(f'- {code.value}')
-        return '\n'.join(descriptions)
+        return '\n'.join(f'- {code.value}' for code in FailureCategory)
 
     def decide(self, state: TaskState):
-        """
-        Make a collective decision based on all branch results.
-
-        Evaluates all hypothesis results from parallel branches and determines:
-        - Whether to accept one of the hypotheses as the final answer
-        - Which branch produced the best result
-        - What feedback to provide for the next iteration if rejected
-
-        Args:
-            state: TaskState with aggregated results from all branches.
-
-        Returns:
-            dict: Decision outcome including 'decision' boolean, 'best_branch_index',
-                  'final_output', 'feedback', and updated 'memory'.
-        """
         self._check_abort()
         self.callbacks.on_phase_change('decision', iteration=state.count)
         logger.bind(ui_event='phase_change', phase='decision').info('Starting Decision Phase...')
@@ -600,26 +456,12 @@ class GCRI:
         }
 
     def _should_update_memory(self, state: TaskState) -> str:
-        """Route to update_memory only if decision is False (continuing to next iteration)."""
         if state.decision:
             logger.debug('Decision=True, skipping memory update (no next iteration)')
             return END
         return 'update_memory'
 
     def update_memory(self, state: TaskState):
-        """
-        Update structured memory based on iteration results.
-
-        Processes the current iteration's feedback and stores relevant
-        learnings in memory for use in subsequent iterations.
-        Also performs sandbox curation for cross-iteration artifact preservation.
-
-        Args:
-            state: TaskState with decision feedback and current memory.
-
-        Returns:
-            dict: Updated 'memory' and 'feedback' for next iteration.
-        """
         self._check_abort()
         self.callbacks.on_phase_change('memory', iteration=state.count)
         logger.bind(ui_event='phase_change', phase='memory').info('Updating Memory...')
@@ -764,7 +606,6 @@ class GCRI:
         return memory
 
     def _restore_from_state(self, task_dict, initial_memory):
-        """Restore execution state from a previous run."""
         memory = initial_memory if initial_memory is not None else StructuredMemory()
         logger.info('🔄 State object detected. Resuming from previous state in memory...')
         try:
@@ -781,7 +622,6 @@ class GCRI:
             raise ValueError('Invalid state object provided.')
 
     def _handle_iteration_success(self, result, index, commit_mode):
-        """Handle successful decision and optional commit."""
         logger.info('Final result is successfully deduced.')
         logger.info(f'Task Completed. Check sandbox: {self.sandbox.work_dir}')
         best_branch_index = result.get('best_branch_index', -1)
@@ -811,7 +651,6 @@ class GCRI:
 
 
     def __call__(self, task, initial_memory=None, commit_mode='manual'):
-        """Execute the GCRI reasoning loop for a given task."""
         start_time = time.time()
         valid_modes = {'manual', 'auto-accept'}
         if commit_mode not in valid_modes:
