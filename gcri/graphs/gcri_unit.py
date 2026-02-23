@@ -300,8 +300,7 @@ class GCRI:
             branch=branch_index, data={'type': 'processing'}
         ).info(f'Iter #{state.count_in_branch+1} | {label} Verifying...')
 
-        branch_cfg_idx = min(branch_index, len(self.config.agents.branches)-1)
-        verification_config = self.config.agents.branches[branch_cfg_idx].verification
+        verification_config = self.config.agents.verification
         agent = build_model(
             verification_config.model_id,
             verification_config.get('gcri_options'),
@@ -412,13 +411,7 @@ class GCRI:
             branch=branch_index, data={'type': 'processing'}
         ).info(f'Iter #{state.count_in_branch+1} | {label} Refining against {last_result.counter_strength} counter-example...')
 
-        branch_cfg_idx = min(branch_index, len(self.config.agents.branches)-1)
-        refinement_config = self.config.agents.branches[branch_cfg_idx].get('refinement')
-        if not refinement_config:
-             # Fallback to verification configs if refinement isn't explicitly defined
-             logger.warning(f'No explicit refinement config for branch {branch_index}, falling back to verification config')
-             refinement_config = self.config.agents.branches[branch_cfg_idx].verification
-             
+        refinement_config = self.config.agents.refinement
         agent = build_model(
             refinement_config.model_id,
             refinement_config.get('gcri_options'),

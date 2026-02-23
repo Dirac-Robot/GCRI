@@ -7,7 +7,7 @@ from ato.scope import Scope
 from loguru import logger
 
 scope = Scope(config=ADict.auto())
-AGENT_NAMES_IN_BRANCH = ['hypothesis', 'verification', 'refinement']
+AGENT_NAMES_IN_BRANCH = ['hypothesis']
 
 
 def get_template_path(file_path: str, template_version: str) -> str:
@@ -77,6 +77,28 @@ def default(config):
         model_id='gpt-5-mini',
         parameters=ADict(
             max_completion_tokens=32768
+        )
+    )
+    config.agents.verification = dict(
+        model_id='gpt-5-mini',
+        parameters=ADict(
+            max_completion_tokens=65536
+        ),
+        gcri_options=ADict(
+            use_code_tools=True,
+            use_web_search=True,
+            max_recursion_depth=None
+        )
+    )
+    config.agents.refinement = dict(
+        model_id='gpt-5-mini',
+        parameters=ADict(
+            max_completion_tokens=65536
+        ),
+        gcri_options=ADict(
+            use_code_tools=True,
+            use_web_search=True,
+            max_recursion_depth=None
         )
     )
     config.template_version = 'v0.1.1'
