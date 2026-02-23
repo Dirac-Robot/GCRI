@@ -426,9 +426,15 @@ class RecursiveToolAgent(Runnable):
         self.schema = schema
         self.tools_map = {t.name: t for t in tools}
         unique_tools = list({t.name: t for t in tools}.values())
+        bind_kwargs = {}
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            if not isinstance(self.agent, ChatGoogleGenerativeAI):
+                bind_kwargs['parallel_tool_calls'] = False
+        except ImportError:
+            bind_kwargs['parallel_tool_calls'] = False
         self.model_with_tools = self.agent.bind_tools(
-            unique_tools+[schema], 
-            parallel_tool_calls=False
+            unique_tools+[schema], **bind_kwargs
         )
         self.guard = get_shared_guard()
         self.container_id = container_id
@@ -561,9 +567,60 @@ def _parse_gcri_options(gcri_options):
     )
 
 
+PROVIDER_MAP = {
+    'gemini-': 'google_genai',
+    'claude-': 'anthropic',
+    'gpt-': 'openai',
+    'o1': 'openai',
+    'o3': 'openai',
+    'o4': 'openai',
+}
+
+def _resolve_provider(model_id: str) -> str | None:
+    for prefix, provider in PROVIDER_MAP.items():
+        if model_id.startswith(prefix):
+            return provider
+    return None
+
+def _apply_config_overrides(tools, parameters):
+    config = GlobalVariables.CONFIG
+    if not config:
+        return tools
+        
+    final_tools = []
+    
+    # 1. Override search_web if a custom search_tool is provided
+    custom_search = getattr(config, 'search_tool', None)
+    for t in tools:
+        if t.name == 'search_web' and custom_search:
+            final_tools.append(custom_search)
+        else:
+            final_tools.append(t)
+            
+    # 2. Append any extra tools provided by the environment
+    extra_tools = getattr(config, 'extra_tools', [])
+    if extra_tools:
+        final_tools.extend(extra_tools)
+        
+    # 3. Inject global callbacks into parameters
+    callbacks = getattr(config, 'callbacks', [])
+    if callbacks:
+        existing_callbacks = parameters.get('callbacks', [])
+        parameters['callbacks'] = existing_callbacks + callbacks
+        
+    return final_tools
+
+
 def build_model(model_id, gcri_options=None, container_id=None, **parameters):
+    provider = _resolve_provider(model_id)
+    if provider and 'model_provider' not in parameters:
+        parameters['model_provider'] = provider
+        
     use_code_tools, use_web_search, max_recursion_depth = _parse_gcri_options(gcri_options)
     tools = (CLI_TOOLS if use_code_tools else [])+([search_web] if use_web_search else [])
+    
+    tools = _apply_config_overrides(tools, parameters)
+    
     return CodeAgentBuilder(
         model_id, tools=tools, container_id=container_id,
         max_recursion_depth=max_recursion_depth, **parameters
@@ -571,8 +628,15 @@ def build_model(model_id, gcri_options=None, container_id=None, **parameters):
 
 
 def build_decision_model(model_id, gcri_options=None, **parameters):
+    provider = _resolve_provider(model_id)
+    if provider and 'model_provider' not in parameters:
+        parameters['model_provider'] = provider
+        
     use_code_tools, _, max_recursion_depth = _parse_gcri_options(gcri_options)
     tools = DECISION_TOOLS if use_code_tools else []
+    
+    tools = _apply_config_overrides(tools, parameters)
+    
     return CodeAgentBuilder(
         model_id, tools=tools, container_id=None,
         max_recursion_depth=max_recursion_depth, **parameters
