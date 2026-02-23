@@ -7,7 +7,7 @@ from ato.scope import Scope
 from loguru import logger
 
 scope = Scope(config=ADict.auto())
-AGENT_NAMES_IN_BRANCH = ['hypothesis', 'reasoning', 'verification']
+AGENT_NAMES_IN_BRANCH = ['hypothesis', 'verification', 'refinement']
 
 
 def get_template_path(file_path: str, template_version: str) -> str:
@@ -85,6 +85,7 @@ def default(config):
         accept_all=True,
         aggregate_targets=['strategy', 'hypothesis', 'counter_example', 'adjustment', 'counter_strength'],
         max_iterations=5,
+        max_verifying_iterations=3,
         max_tries_per_agent=3,
         max_copy_size=10,
         force_output=False
@@ -96,7 +97,7 @@ def default(config):
         timeout=60,
         memory_limit='512m',
         cpu_limit=1.0,
-        network_mode='none'
+        network_mode='bridge'
     )
     config.num_branches = 2
     config.branches_generator_type = 'default'  # 'default', 'deep', 'shallow'
@@ -110,7 +111,7 @@ def default(config):
                 agent_name: ADict(
                     model_id='gpt-5-mini',
                     parameters=dict(
-                        max_completion_tokens=32768
+                        max_completion_tokens=65536
                     ),
                     gcri_options=ADict(
                         use_code_tools=True,
@@ -129,6 +130,7 @@ def default(config):
             hypothesis_minimal=get_template_path('hypothesis_minimal.txt', config.template_version),
             reasoning=get_template_path('reasoning.txt', config.template_version),
             verification=get_template_path('verification.txt', config.template_version),
+            refinement=get_template_path('refinement.txt', config.template_version),
             decision=get_template_path('decision.txt', config.template_version),
             memory=get_template_path('memory.txt', config.template_version),
             active_memory=get_template_path('active_memory.txt', config.template_version),

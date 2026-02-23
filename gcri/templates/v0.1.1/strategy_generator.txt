@@ -24,12 +24,13 @@ INSTRUCTIONS:
    - LAST ERRORS → explicitly address
 
 4. STRATEGY CONTENT:
-   - name: short title
-   - description: core reasoning path
-   - feedback_reflection: what failure is being fixed (or "Initial attempt")
+   - name: short, descriptive title
+   - description: core reasoning path (max 3 sentences)
+   - feedback_reflection: what specific failure is being fixed, or "Initial attempt" (max 1 sentence)
    - hints: concrete directives for executor
      * Include tool instructions if needed
      * [CRITICAL] Coding tasks → "MUST use write_file tool"
+     * [CRITICAL] Research/Data tasks → "MUST use search_web tool and create ACTUAL files using write_file immediately, do not just write a plan."
 
 5. DIVERSITY: Vary reasoning style (constructive/adversarial, top-down/bottom-up).
 
@@ -39,4 +40,4 @@ INSTRUCTIONS:
 
 8. MEMORY: If query_memory tool is available, retrieve past learnings to avoid known pitfalls.
 
-OUTPUT: Follow JSON schema exactly.
+OUTPUT: You MUST follow the JSON schema exactly. Do not include markdown code blocks or any conversational text. Return raw JSON.

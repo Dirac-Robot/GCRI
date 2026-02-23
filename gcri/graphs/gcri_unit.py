@@ -18,7 +18,8 @@ from gcri.graphs.schemas import (
     RawHypothesis,
     AggregatedBranch,
     SandboxCurationResult,
-    create_decision_schema
+    create_decision_schema,
+    Refinement
 )
 from gcri.graphs.states import (
     TaskState, BranchState, VerificationBranchState,
@@ -62,11 +63,17 @@ class GCRI:
         # Build main graph
         graph = StateGraph(TaskState)
 
-        # Verification branch workflow
+        # Verification branch workflow (Micro-loop: Verify <-> Refine)
         verification_branch = StateGraph(VerificationBranchState)
         verification_branch.add_node('verify', self.verify_aggregated)
+        verification_branch.add_node('refine', self.refine_hypothesis)
         verification_branch.add_edge(START, 'verify')
-        verification_branch.add_edge('verify', END)
+        verification_branch.add_conditional_edges(
+            'verify',
+            self._should_refine,
+            {'refine': 'refine', END: END}
+        )
+        verification_branch.add_edge('refine', 'verify')
         self._verification_workflow = verification_branch.compile()
 
         # Initialize decision and memory agents (core GCRI components)
@@ -226,6 +233,7 @@ class GCRI:
     def collect_verification(self, state: TaskState):
         aggregated_results = []
         targets = self.config.protocols.aggregate_targets
+        # Target keys might vary slightly now (e.g., 'adjustment' might not exist directly on Verification, but is on HypothesisResult)
         accepted_count = 0
         rejected_count = 0
 
@@ -323,7 +331,7 @@ class GCRI:
             counter_reasoning=verification.reasoning,
             counter_example=verification.counter_example,
             counter_strength=verification.counter_strength,
-            adjustment=verification.adjustment
+            adjustment=''  # Initialize empty, will be populated by refinement
         )
 
         log_data = {
@@ -362,12 +370,94 @@ class GCRI:
             feedback_reflection='Aggregated from multiple branches',
             hints=[f'Source branches: {branch.source_indices}']
         )
+        # Since reasoning is skipped in generation, pass an empty string or placeholder
+        reasoning_placeholder = '[Skipped initial refinement]'
         return self._run_verification(
             state, state.container_id, state.index,
-            pseudo_strategy, branch.merge_reasoning, branch.combined_hypothesis,
+            pseudo_strategy, reasoning_placeholder, branch.combined_hypothesis,
             state.intent_analysis_in_branch,
             source_info=branch.source_indices
         )
+
+    def _should_refine(self, state: VerificationBranchState) -> str:
+        """Condition to determine if refinement is needed based on verification results."""
+        if not state.results:
+            return END
+        
+        last_result = state.results[-1]
+        
+        # Check max retries for the micro-loop (e.g. 3 times) to prevent infinite loops
+        current_micro_iterations = len(state.results)
+        max_micro_iterations = self.config.protocols.get('max_verifying_iterations', 3)
+
+        # Let it fail if it reaches the limit
+        if current_micro_iterations >= max_micro_iterations:
+            logger.warning(f'Branch[{state.index}] Reached max refine iterations ({max_micro_iterations}).')
+            return END
+
+        if last_result.counter_strength in ['strong', 'weak']:
+            return 'refine'
+        
+        # 'none' or other unexpected values
+        return END
+
+    def refine_hypothesis(self, state: VerificationBranchState):
+        """Refines the hypothesis based on the latest verification counter-example."""
+        self._check_abort()
+        
+        last_result = state.results[-1]
+        branch_index = state.index
+        container_id = state.container_id
+        
+        label = f'RefineBranch[{branch_index}]'
+        logger.bind(
+            ui_event='node_update', node='refinement',
+            branch=branch_index, data={'type': 'processing'}
+        ).info(f'Iter #{state.count_in_branch+1} | {label} Refining against {last_result.counter_strength} counter-example...')
+
+        branch_cfg_idx = min(branch_index, len(self.config.agents.branches)-1)
+        refinement_config = self.config.agents.branches[branch_cfg_idx].get('refinement')
+        if not refinement_config:
+             # Fallback to verification configs if refinement isn't explicitly defined
+             logger.warning(f'No explicit refinement config for branch {branch_index}, falling back to verification config')
+             refinement_config = self.config.agents.branches[branch_cfg_idx].verification
+             
+        agent = build_model(
+            refinement_config.model_id,
+            refinement_config.get('gcri_options'),
+            container_id=container_id,
+            **refinement_config.parameters
+        ).with_structured_output(schema=Refinement)
+
+        template = self._load_template_with_rules(
+            self.config.templates.refinement,
+            task=state.task_in_branch,
+            strategy=last_result.strategy,
+            intent_analysis=state.intent_analysis_in_branch,
+            hypothesis=last_result.hypothesis,
+            counter_example=last_result.counter_example,
+            counter_reasoning=last_result.counter_reasoning
+        )
+        
+        refinement = self._invoke_with_retry(agent, template, 'Refinement agent')
+
+        # Update the aggregated branch with the new refined hypothesis for the next verification loop
+        # We mutate the state's aggregated_branch.combined_hypothesis so verify_aggregated picks it up
+        state.aggregated_branch.combined_hypothesis = refinement.refined_hypothesis
+        
+        # Store the adjustment log in the last hypothesis result so Decision Maker can see how it was fixed
+        # Ensure we don't accidentally wipe out previous adjustment logs if it failed multiple times
+        existing_adj = getattr(last_result, 'adjustment', '')
+        new_adj = f"{existing_adj}\n[Refinement Round {len(state.results)}]: {refinement.adjustment_log}".strip()
+        last_result.adjustment = new_adj
+
+        logger.bind(
+            ui_event='node_update', node='refinement',
+            branch=branch_index, data={'adjustment': refinement.adjustment_log, 'container_id': container_id}
+        ).info(f'Iter #{state.count_in_branch+1} | {label} Refined: {refinement.adjustment_log}')
+        
+        # We don't append a new result to state.results. The NEXT verify_aggregated step will append a NEW result.
+        return {'aggregated_branch': state.aggregated_branch}
 
     @classmethod
     def _get_failure_category_description(cls):

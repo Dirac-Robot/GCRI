@@ -16,6 +16,10 @@ def main(config):
 
     initial_task = getattr(config, 'initial_task', None)
     if initial_task:
+        if os.path.exists(initial_task):
+            with open(initial_task) as f:
+                initial_task = f.read()
+                
         logger.info(f'📝 Running initial task: {initial_task[:100]}...')
         try:
             result = worker(initial_task)
@@ -67,3 +71,7 @@ def main(config):
                 continue
         except Exception as e:
             logger.error(f'(!) Task is failed with error: {e}')
+
+
+if __name__ == '__main__':
+    main()

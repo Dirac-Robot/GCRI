@@ -81,13 +81,24 @@ class Verification(BaseModel):
         ...,
         description='The severity of the failure. Use "strong" for execution errors or fatal logic flaws, and "none" if the hypothesis is valid.'
     )
-    adjustment: str = Field(
+    reasoning: str = Field(
+        ...,
+        description='Analysis of why the counter-example is valid.'
+    )
+
+
+class Refinement(BaseModel):
+    refined_hypothesis: str = Field(
+        ...,
+        description='A lightly improved version of the hypothesis. It should fix logical flaws and address the counter_example without changing the original solution family or exceeding the scope.'
+    )
+    adjustment_log: str = Field(
         ...,
         description='A concise log describing exactly what was changed in the hypothesis and why, to fix the counter-example.'
     )
     reasoning: str = Field(
         ...,
-        description='Analysis of why the counter-example is valid.'
+        description='Detailed evaluation of why the changes resolve the counter-example.'
     )
 
 

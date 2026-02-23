@@ -32,7 +32,8 @@ PROCEDURE:
    - final_output: {schema_desc}
 
 5. IF False:
-   - Synthesize global_feedback with clear policy for next iteration
+   - Synthesize global_feedback with clear policy for next iteration.
+   - You MUST include insights from any PARTIALLY_VALID branches in the feedback completely so that they are not lost.
    - What pattern failed? What should change?
 
 CONSTRAINTS:

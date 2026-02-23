@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, List, Type
 
 from ato.adict import ADict
-from ddgs import DDGS
+import httpx
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import Runnable, RunnableConfig
@@ -181,20 +181,57 @@ def local_python_interpreter(code: str) -> str:
     return sandbox.execute_python(container_id, code)
 
 
+def _search_serper(query: str, max_results: int = 10) -> list[dict]:
+    api_key = os.environ.get('SERPER_API_KEY', '')
+    if not api_key:
+        return []
+    try:
+        resp = httpx.post(
+            'https://google.serper.dev/search',
+            headers={'X-API-KEY': api_key, 'Content-Type': 'application/json'},
+            json={'q': query, 'num': min(max_results, 10)},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        results = []
+        for item in resp.json().get('organic', []):
+            results.append({
+                'title': item.get('title', ''),
+                'href': item.get('link', ''),
+                'body': item.get('snippet', ''),
+            })
+        return results
+    except Exception as e:
+        logger.warning(f'Serper search failed: {e}')
+        return []
+
+
+def _search_ddg(query: str, max_results: int = 10) -> list[dict]:
+    try:
+        from ddgs import DDGS
+        with DDGS() as ddgs:
+            return list(ddgs.text(query, max_results=max_results)) or []
+    except Exception as e:
+        logger.error(f'DuckDuckGo search error: {e}')
+        return []
+
+
 @tool
 def search_web(query: str) -> str:
-    """Searches the web using DuckDuckGo."""
-    try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=5))
-            if not results:
-                return 'No results found.'
-            formatted = []
-            for result in results:
-                formatted.append(f'Title: {result["title"]}\nLink: {result["href"]}\nSnippet: {result["body"]}')
-            return '\n---\n'.join(formatted)
-    except Exception as e:
-        return f'Search Error: {e}'
+    """Searches the web (Google via Serper, DuckDuckGo fallback)."""
+    results = _search_serper(query)
+    if results:
+        logger.info(f'Serper (Google) returned {len(results)} results')
+    else:
+        results = _search_ddg(query)
+        if results:
+            logger.info(f'DuckDuckGo returned {len(results)} results')
+    if not results:
+        return 'No results found.'
+    formatted = []
+    for i, r in enumerate(results, 1):
+        formatted.append(f'[{i}] {r.get("title", "")}\n    {r.get("body", "")}\n    URL: {r.get("href", "")}')
+    return '\n\n'.join(formatted)
 
 
 class BranchContainerRegistry:
@@ -389,7 +426,10 @@ class RecursiveToolAgent(Runnable):
         self.schema = schema
         self.tools_map = {t.name: t for t in tools}
         unique_tools = list({t.name: t for t in tools}.values())
-        self.model_with_tools = self.agent.bind_tools(unique_tools+[schema])
+        self.model_with_tools = self.agent.bind_tools(
+            unique_tools+[schema], 
+            parallel_tool_calls=False
+        )
         self.guard = get_shared_guard()
         self.container_id = container_id
         self.max_recursion_depth = max_recursion_depth
@@ -427,6 +467,8 @@ class RecursiveToolAgent(Runnable):
                         )
                     if is_empty:
                         logger.warning(f'Empty response from model (content type: {type(content).__name__}). Retrying...')
+                        logger.warning(f'Raw metadata from empty response: {getattr(result, "response_metadata", "None")}')
+                        
                         messages.append(HumanMessage(content='Your response was empty. Please provide the final answer or call a tool.'))
                         recursion_count += 1
                         if self.max_recursion_depth is not None and recursion_count >= self.max_recursion_depth:
@@ -435,15 +477,21 @@ class RecursiveToolAgent(Runnable):
                         continue
                     # Try structured output parsing with retry on failure
                     try:
-                        return self.agent.with_structured_output(self.schema).invoke(messages)
+                        parsed = self.agent.with_structured_output(self.schema).invoke(messages)
+                        if parsed is not None:
+                            return parsed
                     except Exception as e:
-                        parse_retry_count += 1
-                        if parse_retry_count >= max_parse_retries:
-                            logger.error(f'Structured output parsing failed after {max_parse_retries} retries: {e}')
-                            return None
-                        logger.warning(f'JSON parsing error (attempt {parse_retry_count}/{max_parse_retries}): {e}')
-                        messages.append(HumanMessage(content='Your response had invalid JSON format. Please provide a valid JSON response matching the required schema.'))
-                        continue
+                        logger.warning(f'Structured output conversion error: {e}')
+                        pass
+                    
+                    parse_retry_count += 1
+                    if parse_retry_count >= max_parse_retries:
+                        logger.error(f'Structured output parsing failed after {max_parse_retries} retries.')
+                        return None
+                        
+                    logger.warning(f'Direct text response detected instead of schema. Retrying (attempt {parse_retry_count}/{max_parse_retries})...')
+                    messages.append(HumanMessage(content=f'Please output your final answer by calling the `{self.schema.__name__}` tool with the correct arguments. Do not output raw text.'))
+                    continue
                 outputs = []
                 for call in result.tool_calls:
                     name, args, call_id = call['name'], call['args'], call['id']

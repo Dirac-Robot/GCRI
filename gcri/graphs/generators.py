@@ -176,53 +176,14 @@ class DefaultBranchesGenerator(BaseBranchesGenerator):
             data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
         ).info(f'Iter #{count+1} | Branch[{index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
 
-        # Step 2: Reasoning & Refine
-        self._check_abort()
-        logger.bind(
-            ui_event='node_update',
-            node='reasoning',
-            branch=index,
-            data={'type': 'processing'}
-        ).info(f'Iter #{count+1} | Branch[{index}] Reasoning...')
-
-        reasoning_config = self.config.agents.branches[index].reasoning
-        reasoning_agent = build_model(
-            reasoning_config.model_id,
-            reasoning_config.get('gcri_options'),
-            container_id=container_id,
-            **reasoning_config.parameters
-        ).with_structured_output(schema=Reasoning)
-
-        reasoning_template = self._load_template_with_rules(
-            self.config.templates.reasoning,
-            task=task,
-            strategy=strategy,
-            hypothesis=hypothesis.hypothesis,
-            intent_analysis=intent_analysis
-        )
-        reasoning = self._invoke_with_retry(
-            reasoning_agent, reasoning_template, f'Reasoning agent at hypothesis #{index+1}'
-        )
-
         raw_hyp = RawHypothesis(
             index=index,
             strategy_name=strategy.name,
             strategy_description=strategy.description,
-            hypothesis=reasoning.refined_hypothesis,
-            reasoning=reasoning.reasoning,
+            hypothesis=hypothesis.hypothesis,
+            reasoning='[Default: No initial refinement applied]',
             container_id=container_id
         )
-
-        logger.bind(
-            ui_event='node_update',
-            node='reasoning',
-            branch=index,
-            data={
-                'reasoning': reasoning.reasoning,
-                'hypothesis': reasoning.refined_hypothesis,
-                'container_id': container_id
-            }
-        ).info(f'Iter #{count+1} | Branch[{index}] Refined: {reasoning.refined_hypothesis[:80]}...')
 
         return raw_hyp
 
@@ -324,53 +285,14 @@ class DeepThinkGenerator(BaseBranchesGenerator):
             data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
         ).info(f'[DeepThink] Iter #{count+1} | Branch[{index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
 
-        # Step 2: Reasoning & Refine
-        self._check_abort()
-        logger.bind(
-            ui_event='node_update',
-            node='reasoning',
-            branch=index,
-            data={'type': 'processing'}
-        ).info(f'[DeepThink] Iter #{count+1} | Branch[{index}] Reasoning and refining...')
-
-        reasoning_config = self.config.agents.branches[index].reasoning
-        reasoning_agent = build_model(
-            reasoning_config.model_id,
-            reasoning_config.get('gcri_options'),
-            container_id=container_id,
-            **reasoning_config.parameters
-        ).with_structured_output(schema=Reasoning)
-
-        reasoning_template = self._load_template_with_rules(
-            self.config.templates.reasoning,
-            task=task,
-            strategy=strategy,
-            hypothesis=hypothesis.hypothesis,
-            intent_analysis=intent_analysis
-        )
-        reasoning = self._invoke_with_retry(
-            reasoning_agent, reasoning_template, f'Reasoning agent at hypothesis #{index+1}'
-        )
-
         raw_hyp = RawHypothesis(
             index=index,
             strategy_name=strategy.name,
             strategy_description=strategy.description,
-            hypothesis=reasoning.refined_hypothesis,
-            reasoning=reasoning.reasoning,
+            hypothesis=hypothesis.hypothesis,
+            reasoning='[DeepThink: No initial refinement applied]',
             container_id=container_id
         )
-
-        logger.bind(
-            ui_event='node_update',
-            node='reasoning',
-            branch=index,
-            data={
-                'reasoning': reasoning.reasoning,
-                'hypothesis': reasoning.refined_hypothesis,
-                'container_id': container_id
-            }
-        ).info(f'[DeepThink] Iter #{count+1} | Branch[{index}] Refined: {reasoning.refined_hypothesis[:80]}...')
 
         return raw_hyp
 

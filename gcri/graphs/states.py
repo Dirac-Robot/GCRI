@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from gcri.graphs.schemas import (
     BranchAnalysis, RefutationStatus, Strategy,
-    RawHypothesis, AggregatedBranch
+    RawHypothesis, AggregatedBranch, Refinement
 )
 
 
