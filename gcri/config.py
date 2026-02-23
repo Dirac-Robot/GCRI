@@ -100,7 +100,6 @@ def default(config):
         network_mode='bridge'
     )
     config.num_branches = 2
-    config.branches_generator_type = 'default'  # 'default', 'deep', 'shallow'
     config.aggregation = dict(
         max_output_branches=3,
         allow_single_source_passthrough=True
@@ -127,8 +126,6 @@ def default(config):
             black_and_white_lists=get_template_path('black_and_white_lists.json', config.template_version),
             strategy_generator=get_template_path('strategy_generator.txt', config.template_version),
             hypothesis=get_template_path('hypothesis.txt', config.template_version),
-            hypothesis_minimal=get_template_path('hypothesis_minimal.txt', config.template_version),
-            reasoning=get_template_path('reasoning.txt', config.template_version),
             verification=get_template_path('verification.txt', config.template_version),
             refinement=get_template_path('refinement.txt', config.template_version),
             decision=get_template_path('decision.txt', config.template_version),
@@ -152,25 +149,3 @@ def apply_custom_config(config):
             logger.warning(f'Fallback to default config...')
 
 
-@scope.observe()
-def no_reasoning(config):
-    _params = ADict(max_tokens=25600)
-    _opts = ADict(use_code_tools=True, use_web_search=True, max_recursion_depth=None)
-
-    def _agent(model_id):
-        return dict(model_id=model_id, parameters=_params, gcri_options=_opts)
-
-    config.agents.planner = _agent('gpt-4.1')
-    config.agents.compression = _agent('gpt-4.1-mini')
-    config.agents.strategy_generator = _agent('gpt-4.1-mini')
-    config.agents.aggregator = _agent('gpt-4.1')
-    config.agents.decision = ADict(**_agent('gpt-4.1'))
-    config.agents.memory = _agent('gpt-4.1-mini')
-
-    with scope.lazy():
-        config.agents.branches = [
-            {
-                agent_name: ADict(**_agent('gpt-4.1-mini'))
-                for agent_name in AGENT_NAMES_IN_BRANCH
-            } for _ in range(config.num_branches)
-        ]

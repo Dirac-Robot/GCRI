@@ -179,6 +179,7 @@ class VerificationBranchState(BaseModel):
     index: int = Field(..., description='Verification branch index (0-based)')
     container_id: str = Field(..., description='Container ID for isolated execution')
     results: List[HypothesisResult] = Field(default_factory=list, description='Verification results')
+    verify_count: int = Field(default=0, description='Number of verification attempts in micro-loop')
 
 
 class GlobalState(BaseModel):

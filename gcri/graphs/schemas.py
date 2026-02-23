@@ -61,17 +61,6 @@ class Hypothesis(BaseModel):
     )
 
 
-class Reasoning(BaseModel):
-    refined_hypothesis: str = Field(
-        ...,
-        description='A lightly improved version of the hypothesis. It should fix logical flaws and enhance clarity without changing the original solution family or exceeding the scope.'
-    )
-    reasoning: str = Field(
-        ...,
-        description='Detailed evaluation of the hypothesis, strictly identifying strengths, weaknesses, and likely failure points before refinement.'
-    )
-
-
 class Verification(BaseModel):
     counter_example: str = Field(
         ...,

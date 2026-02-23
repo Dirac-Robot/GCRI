@@ -10,7 +10,6 @@ from pydantic import TypeAdapter
 
 from gcri.graphs.schemas import (
     Verification,
-    Reasoning,
     Hypothesis,
     Strategies,
     FailureCategory,
@@ -27,7 +26,7 @@ from gcri.graphs.states import (
 )
 from gcri.graphs.callbacks import GCRICallbacks, CLICallbacks
 from gcri.graphs.aggregator import HypothesisAggregator
-from gcri.graphs.generators import get_branches_generator
+from gcri.graphs.generators import DefaultBranchesGenerator
 from gcri.tools.cli import build_model, build_decision_model, BranchContainerRegistry, set_global_variables
 from gcri.tools.utils import SandboxManager
 
@@ -52,13 +51,10 @@ class GCRI:
         with open(config.templates.global_rules, 'r') as f:
             self.global_rules = f.read()
 
-        # Initialize aggregator and generator
         self.aggregator = HypothesisAggregator(config, self.sandbox.docker_sandbox)
-        generator_type = getattr(config, 'branches_generator_type', 'default')
-        self._branches_generator = get_branches_generator(
-            generator_type, config, self.sandbox, abort_event, self.global_rules
+        self._branches_generator = DefaultBranchesGenerator(
+            config, self.sandbox, abort_event, self.global_rules
         )
-        logger.info(f'🔧 BranchesGenerator type: {generator_type} ({type(self._branches_generator).__name__})')
 
         # Build main graph
         graph = StateGraph(TaskState)
@@ -352,7 +348,7 @@ class GCRI:
             state.count_in_branch, branch_index,
             verification.counter_strength, verification.counter_example
         )
-        return {'results': [result]}
+        return {'results': [result], 'verify_count': state.verify_count+1}
 
     def verify(self, state: BranchState):
         return self._run_verification(
@@ -383,15 +379,16 @@ class GCRI:
         """Condition to determine if refinement is needed based on verification results."""
         if not state.results:
             return END
-        
+
         last_result = state.results[-1]
-        
-        # Check max retries for the micro-loop (e.g. 3 times) to prevent infinite loops
-        current_micro_iterations = len(state.results)
         max_micro_iterations = self.config.protocols.get('max_verifying_iterations', 3)
 
-        # Let it fail if it reaches the limit
-        if current_micro_iterations >= max_micro_iterations:
+        logger.info(
+            f'Branch[{state.index}] verify_count={state.verify_count}/{max_micro_iterations}, '
+            f'counter={last_result.counter_strength}'
+        )
+
+        if state.verify_count >= max_micro_iterations:
             logger.warning(f'Branch[{state.index}] Reached max refine iterations ({max_micro_iterations}).')
             return END
 
