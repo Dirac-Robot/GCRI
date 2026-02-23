@@ -33,7 +33,7 @@ INSTRUCTIONS:
      * [CRITICAL] Research/Data tasks → "MUST use search_web tool and create ACTUAL files using write_file immediately, do not just write a plan."
      * [CRITICAL] NEVER generate hints that ask the user for input or clarification. The executor has NO access to the user. All ambiguity must be resolved by making reasonable assumptions.
 
-5. DIVERSITY: Vary reasoning style (constructive/adversarial, top-down/bottom-up).
+5. DIVERSITY: Ensure strategies represent genuinely different methodologies or paradigms. Avoid simply labeling them with mechanical terms (like 'top-down' or 'adversarial'); the core approaches must be distinctly unique.
 
 6. CONTRARIAN: If graveyard shows pattern, challenge the core assumption.
 
