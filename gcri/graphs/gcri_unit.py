@@ -52,7 +52,7 @@ class GCRI:
 
         self.aggregator = HypothesisAggregator(config, self.sandbox.docker_sandbox)
         self._branches_generator = DefaultBranchesGenerator(
-            config, self.sandbox, abort_event, self.global_rules
+            config, self.sandbox, abort_event, self.global_rules, self.callbacks
         )
 
         # Build main graph
@@ -171,6 +171,7 @@ class GCRI:
                 'counter_strength': 'none',
                 'index': branch.index,
                 'source_indices': branch.source_indices,
+                'produced_files': branch.produced_files,
             }
             aggregated_results.append({key: result_dict.get(key) for key in targets})
 
@@ -182,23 +183,12 @@ class GCRI:
 
 
 
+
     def generate_branches(self, state: TaskState):
         self._check_abort()
         self.callbacks.on_phase_change('strategy', iteration=state.count)
         logger.info(f'Iter #{state.count+1} | Generating branches via {type(self._branches_generator).__name__}...')
         result = self._branches_generator.generate(state)
-        strategies = result.get('strategies', [])
-        if strategies:
-            strat_dicts = [s.model_dump() if hasattr(s, 'model_dump') else s for s in strategies]
-            self.callbacks.on_strategies_generated(state.count, strat_dicts)
-        raw_hyps = result.get('raw_hypotheses', [])
-        for hyp in raw_hyps:
-            h = hyp.model_dump() if hasattr(hyp, 'model_dump') else hyp
-            self.callbacks.on_hypothesis_generated(
-                state.count, h.get('index', 0),
-                str(h.get('hypothesis', '')),
-                h.get('strategy_name', '')
-            )
         return result
 
     def _check_abort(self):

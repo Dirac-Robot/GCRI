@@ -107,7 +107,9 @@ class AggregatedBranch(BaseModel):
     combined_hypothesis: str = Field(..., description='Merged or refined hypothesis')
     source_indices: List[int] = Field(..., description='Original branch indices that were combined')
     merge_reasoning: str = Field(..., description='Why this combination was selected')
+    produced_files: List[str] = Field(default_factory=list, description='File paths already produced in sandbox by source branches')
     container_id: str = Field(default='', description='Container ID with merged files')
+
 
 
 class AggregationResult(BaseModel):

@@ -42,11 +42,12 @@ class BranchesGeneratorProtocol(Protocol):
 
 class BaseBranchesGenerator:
 
-    def __init__(self, config, sandbox, abort_event=None, global_rules=''):
+    def __init__(self, config, sandbox, abort_event=None, global_rules='', callbacks=None):
         self.config = config
         self.sandbox = sandbox
         self.abort_event = abort_event
         self.global_rules = global_rules
+        self.callbacks = callbacks
 
     def _check_abort(self):
         if self.abort_event is not None and self.abort_event.is_set():
@@ -114,6 +115,10 @@ class BaseBranchesGenerator:
             }
         ).info('Strategies generated.')
 
+        if self.callbacks:
+            strat_dicts = [s.model_dump() for s in strategies.strategies]
+            self.callbacks.on_strategies_generated(state.count, strat_dicts)
+
         return {
             'task_strictness': strategies.strictness,
             'strategies': strategies.strategies,
@@ -164,6 +169,11 @@ class DefaultBranchesGenerator(BaseBranchesGenerator):
             data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
         ).info(f'Iter #{count+1} | Branch[{index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
 
+        if self.callbacks:
+            self.callbacks.on_hypothesis_generated(
+                count, index, hypothesis.hypothesis, strategy.name
+            )
+
         current_hypothesis = hypothesis.hypothesis
         adjustment_log = ''
 
@@ -211,6 +221,12 @@ class DefaultBranchesGenerator(BaseBranchesGenerator):
                 f'{verification.counter_strength.upper()} counter'
             )
 
+            if self.callbacks:
+                self.callbacks.on_verification_complete(
+                    count, index,
+                    verification.counter_strength, verification.counter_example
+                )
+
             if verification.counter_strength not in ('strong', 'weak'):
                 break
 
@@ -247,6 +263,9 @@ class DefaultBranchesGenerator(BaseBranchesGenerator):
 
             current_hypothesis = refinement.refined_hypothesis
             adjustment_log += f'[Round {verify_round+1}]: {refinement.adjustment_log}\n'
+
+            if self.callbacks:
+                self.callbacks.on_refinement_complete(count, index, refinement.adjustment_log)
 
             logger.bind(
                 ui_event='node_update', node='refinement',

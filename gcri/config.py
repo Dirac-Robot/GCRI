@@ -105,7 +105,7 @@ def default(config):
     config.plan.num_max_tasks = 5
     config.protocols = dict(
         accept_all=True,
-        aggregate_targets=['strategy', 'hypothesis', 'counter_example', 'adjustment', 'counter_strength'],
+        aggregate_targets=['strategy', 'hypothesis', 'counter_example', 'adjustment', 'counter_strength', 'produced_files'],
         max_iterations=5,
         max_verifying_iterations=3,
         max_tries_per_agent=3,
