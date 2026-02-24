@@ -61,6 +61,10 @@ class GCRICallbacks:
         """Called after a branch verification completes."""
         pass
 
+    def on_refinement_complete(self, iteration: int, branch: int, adjustment_log: str):
+        """Called after a branch refinement completes in the verify-refine micro-loop."""
+        pass
+
     def on_decision(self, iteration: int, decision: bool, best_branch: int, feedback: Optional[str], evaluations: List[Dict[str, Any]]):
         """Called after the decision phase."""
         pass
@@ -114,6 +118,9 @@ class CLICallbacks(GCRICallbacks):
 
     def on_verification_complete(self, iteration, branch, counter_strength, counter_example):
         logger.info(f'  🔍 Branch[{branch}] verification: {counter_strength.upper()} counter')
+
+    def on_refinement_complete(self, iteration, branch, adjustment_log):
+        logger.info(f'  🔧 Branch[{branch}] refined: {adjustment_log[:80]}')
 
     def on_decision(self, iteration, decision, best_branch, feedback, evaluations):
         if decision:

@@ -7,7 +7,7 @@ from ato.scope import Scope
 from loguru import logger
 
 scope = Scope(config=ADict.auto())
-AGENT_NAMES_IN_BRANCH = ['hypothesis']
+AGENT_NAMES_IN_BRANCH = ['hypothesis', 'verification', 'refinement']
 
 
 def get_template_path(file_path: str, template_version: str) -> str:
