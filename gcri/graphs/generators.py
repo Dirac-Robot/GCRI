@@ -11,7 +11,7 @@ from langgraph.types import Send
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from gcri.graphs.schemas import Hypothesis, RawHypothesis, Strategies, Strategy
+from gcri.graphs.schemas import Hypothesis, RawHypothesis, Strategies, Strategy, Verification, Refinement
 from gcri.graphs.states import TaskState
 from gcri.tools.cli import build_model
 
@@ -164,12 +164,101 @@ class DefaultBranchesGenerator(BaseBranchesGenerator):
             data={'hypothesis': hypothesis.hypothesis, 'container_id': container_id}
         ).info(f'Iter #{count+1} | Branch[{index}] Hypothesis: {hypothesis.hypothesis[:80]}...')
 
+        current_hypothesis = hypothesis.hypothesis
+        adjustment_log = ''
+
+        max_verify_iters = self.config.protocols.get('max_verifying_iterations', 3)
+        for verify_round in range(max_verify_iters):
+            self._check_abort()
+
+            logger.bind(
+                ui_event='node_update', node='verification',
+                branch=index, data={'type': 'processing'}
+            ).info(f'Iter #{count+1} | Branch[{index}] Verifying (round {verify_round+1})...')
+
+            verification_config = self.config.agents.verification
+            if index < len(self.config.agents.branches):
+                branch_cfg = self.config.agents.branches[index]
+                if hasattr(branch_cfg, 'verification') and branch_cfg.verification.get('model_id'):
+                    verification_config = branch_cfg.verification
+
+            verify_agent = build_model(
+                verification_config.model_id,
+                verification_config.get('gcri_options'),
+                container_id=container_id,
+                **verification_config.parameters
+            ).with_structured_output(schema=Verification)
+
+            verify_template = self._load_template_with_rules(
+                self.config.templates.verification,
+                task=task,
+                strategy=strategy,
+                reasoning='',
+                hypothesis=current_hypothesis,
+                intent_analysis=intent_analysis
+            )
+            verification = self._invoke_with_retry(verify_agent, verify_template, 'Verification agent')
+
+            logger.bind(
+                ui_event='node_update', node='verification',
+                branch=index, data={
+                    'counter_example': verification.counter_example,
+                    'counter_strength': verification.counter_strength,
+                    'container_id': container_id
+                }
+            ).info(
+                f'Iter #{count+1} | Branch[{index}] Verification: '
+                f'{verification.counter_strength.upper()} counter'
+            )
+
+            if verification.counter_strength not in ('strong', 'weak'):
+                break
+
+            self._check_abort()
+
+            logger.bind(
+                ui_event='node_update', node='refinement',
+                branch=index, data={'type': 'processing'}
+            ).info(f'Iter #{count+1} | Branch[{index}] Refining against {verification.counter_strength} counter-example...')
+
+            refinement_config = self.config.agents.refinement
+            if index < len(self.config.agents.branches):
+                branch_cfg = self.config.agents.branches[index]
+                if hasattr(branch_cfg, 'refinement') and branch_cfg.refinement.get('model_id'):
+                    refinement_config = branch_cfg.refinement
+
+            refine_agent = build_model(
+                refinement_config.model_id,
+                refinement_config.get('gcri_options'),
+                container_id=container_id,
+                **refinement_config.parameters
+            ).with_structured_output(schema=Refinement)
+
+            refine_template = self._load_template_with_rules(
+                self.config.templates.refinement,
+                task=task,
+                strategy=strategy,
+                intent_analysis=intent_analysis,
+                hypothesis=current_hypothesis,
+                counter_example=verification.counter_example,
+                counter_reasoning=verification.reasoning
+            )
+            refinement = self._invoke_with_retry(refine_agent, refine_template, 'Refinement agent')
+
+            current_hypothesis = refinement.refined_hypothesis
+            adjustment_log += f'[Round {verify_round+1}]: {refinement.adjustment_log}\n'
+
+            logger.bind(
+                ui_event='node_update', node='refinement',
+                branch=index, data={'adjustment': refinement.adjustment_log, 'container_id': container_id}
+            ).info(f'Iter #{count+1} | Branch[{index}] Refined: {refinement.adjustment_log}')
+
         return RawHypothesis(
             index=index,
             strategy_name=strategy.name,
             strategy_description=strategy.description,
-            hypothesis=hypothesis.hypothesis,
-            reasoning='',
+            hypothesis=current_hypothesis,
+            reasoning=adjustment_log.strip(),
             container_id=container_id
         )
 
