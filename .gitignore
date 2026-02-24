@@ -46,3 +46,9 @@ submissions/
 # uv.lock
 scripts/
 __pycache__/
+
+# agent
+.agent/
+
+# temp
+test_gcri.py
